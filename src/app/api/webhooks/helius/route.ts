@@ -5,7 +5,6 @@ import crypto from 'crypto';
 import { z } from 'zod';
 import { CircuitBreaker } from '@/lib/circuit-breaker';
 import { logger } from '@/lib/logger';
-import { assertSignedIn } from '@/lib/route-auth';
 import { redis } from '@/lib/redis';
 
 const circuitBreaker = new CircuitBreaker({
@@ -66,8 +65,6 @@ async function notifyNtfy(title: string, message: string, tags = 'error,webhook'
 }
 
 export async function POST(request: NextRequest) {
-  const unauthorized = assertSignedIn(request);
-  if (unauthorized) return unauthorized;
   const ctx = extractRequestContext(request);
   const startTime = Date.now();
 
