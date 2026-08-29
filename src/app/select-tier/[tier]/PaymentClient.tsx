@@ -47,6 +47,7 @@ export default function PaymentClient({ tier }: { tier: 'monthly' | 'lifetime' }
   const [txSignature, setTxSignature] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [walletConnected, setWalletConnected] = useState(false);
+  const [isTelegramReady, setIsTelegramReady] = useState(false);
   const [autoRenew, setAutoRenew] = useState(tier === 'monthly'); // Default ON for monthly
   const solAmount = priceInfo[tier].label;
 
@@ -55,7 +56,39 @@ export default function PaymentClient({ tier }: { tier: 'monthly' | 'lifetime' }
     if (phantom?.isPhantom && phantom.publicKey) {
       setWalletConnected(true);
     }
+
+    if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp?.initData) {
+      authenticateTelegram();
+    } else {
+      setIsTelegramReady(true);
+    }
   }, []);
+
+  const authenticateTelegram = async () => {
+    try {
+      const initData = (window as any).Telegram.WebApp.initData;
+      if (!initData) {
+        setIsTelegramReady(true);
+        return;
+      }
+
+      const response = await fetch('/api/auth/telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || errorData.error || 'Telegram authentication failed');
+      }
+
+      setIsTelegramReady(true);
+    } catch (err) {
+      console.error('Telegram auth failed:', err);
+      setIsTelegramReady(true);
+    }
+  };
 
   const handleConnectWallet = async () => {
     try {
