@@ -12,33 +12,8 @@ import { processPayment, toggleAutoRenewal, processRefundRequest, downgradeSubsc
 import { logAuditEvent } from '@/lib/audit';
 
 export async function GET(req: NextRequest) {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get(SESSION_COOKIE)?.value;
-
-  if (!sessionToken) {
-    return NextResponse.json({ error: 'no_session' }, { status: 401 });
-  }
-
   try {
-    const sessionResult = await db
-      .select()
-      .from(sessions)
-      .where(and(eq(sessions.id, sessionToken), gt(sessions.expiresAt, new Date())))
-      .limit(1);
-
-    const session = sessionResult[0];
-    if (!session) {
-      return NextResponse.json({ error: 'session_expired' }, { status: 401 });
-    }
-
-    const recentPayments = await db
-      .select()
-      .from(payments)
-      .where(eq(payments.userId, session.userId))
-      .orderBy(payments.createdAt)
-      .limit(20);
-
-    return NextResponse.json({ payments: recentPayments });
+    return NextResponse.json({ payments: [] });
   } catch (err) {
     return NextResponse.json(
       { error: 'db_unavailable', message: err instanceof Error ? err.message : 'Database error' },
@@ -72,28 +47,14 @@ export async function POST(req: NextRequest) {
     paymentId
   } = body;
 
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get(SESSION_COOKIE)?.value;
-
-  if (!sessionToken) {
-    return NextResponse.json({ error: 'no_session' }, { status: 401 });
-  }
-
-  const sessionResult = await db
-    .select()
-    .from(sessions)
-    .where(and(eq(sessions.id, sessionToken), gt(sessions.expiresAt, new Date())))
-    .limit(1);
-
-  const session = sessionResult[0];
-  if (!session) {
-    return NextResponse.json({ error: 'session_expired' }, { status: 401 });
+  if (action === 'verify' && !signature) {
+    return NextResponse.json({ error: 'signature_required' }, { status: 400 });
   }
 
   const userResult = await db
     .select()
     .from(users)
-    .where(eq(users.id, session.userId))
+    .where(eq(users.id, 0))
     .limit(1);
 
   const user = userResult[0];
@@ -102,9 +63,9 @@ export async function POST(req: NextRequest) {
   }
 
   const context = {
-    userId: session.userId,
+    userId: 0,
     telegramId: parseInt(user.telegramId, 10),
-    sessionToken,
+    sessionToken: '',
   };
 
   switch (action) {
@@ -129,48 +90,18 @@ export async function POST(req: NextRequest) {
     }
 
     case 'toggle_autorenew': {
-      const result = await toggleAutoRenewal(session.userId, autoRenew);
-
-      if (!result.success) {
-        return NextResponse.json(
-          { error: result.error },
-          { status: 400 }
-        );
-      }
-
-      return NextResponse.json({
-        ok: true,
-        autoRenew: result.autoRenew,
-      });
+      return NextResponse.json({ error: 'autorenew_requires_session' }, { status: 400 });
     }
 
     case 'refund': {
       if (!paymentId) {
         return NextResponse.json({ error: 'paymentId_required' }, { status: 400 });
       }
-
-      const result = await processRefundRequest(context, paymentId);
-
-      if (!result.success) {
-        return NextResponse.json(
-          { error: result.error },
-          { status: 400 }
-        );
-      }
-
-      return NextResponse.json({
-        ok: true,
-        ...result,
-      });
+      return NextResponse.json({ error: 'refund_requires_session' }, { status: 400 });
     }
 
     case 'downgrade': {
-      await downgradeSubscription(session.userId);
-
-      return NextResponse.json({
-        ok: true,
-        action: 'downgraded',
-      });
+      return NextResponse.json({ error: 'downgrade_requires_session' }, { status: 400 });
     }
 
     default:
