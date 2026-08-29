@@ -2,15 +2,17 @@ import Redis from 'ioredis';
 
 const redisUrl = process.env.REDIS_URL;
 
-export const redis = new Redis(redisUrl || {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: Number(process.env.REDIS_PORT) || 6379,
-  password: process.env.REDIS_PASSWORD || undefined,
-  db: Number(process.env.REDIS_DB) || 0,
-  maxRetriesPerRequest: 1,
-  enableOfflineQueue: false,
-  retryStrategy: (times) => (times > 3 ? null : times * 200),
-});
+export const redis = redisUrl
+  ? new Redis(redisUrl as string)
+  : new Redis({
+      host: process.env.REDIS_HOST || 'localhost',
+      port: Number(process.env.REDIS_PORT) || 6379,
+      password: process.env.REDIS_PASSWORD || undefined,
+      db: Number(process.env.REDIS_DB) || 0,
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+      retryStrategy: (times) => (times > 3 ? null : times * 200),
+    });
 
 redis.on('error', (err) => {
   console.error('[redis] connection error:', err.message);
