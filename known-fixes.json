@@ -1,0 +1,4 @@
+{
+  "pattern": "Solana polling failed",
+  "description": "Increase SOLANA_RPC_URL timeout or switch to a premium RPC provider (QuickNode, Alchemy) if public endpoint is consistently failing"
+}
