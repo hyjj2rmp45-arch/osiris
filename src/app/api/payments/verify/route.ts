@@ -3,12 +3,10 @@
  * Uses comprehensive payment handler for all scenarios
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { SESSION_COOKIE } from '@/lib/session';
 import { db } from '@/lib/db';
-import { sessions, payments, users, wallets } from '@/lib/schema';
-import { eq, and, gt } from 'drizzle-orm';
-import { processPayment, toggleAutoRenewal, processRefundRequest, downgradeSubscription } from '@/lib/payment-handler';
+import { users } from '@/lib/schema';
+import { eq } from 'drizzle-orm';
+import { processPayment } from '@/lib/payment-handler';
 import { logAuditEvent } from '@/lib/audit';
 
 export async function GET(req: NextRequest) {
