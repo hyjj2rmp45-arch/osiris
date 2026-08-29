@@ -8,7 +8,7 @@
  * The Telegram bot uses webhooks via Vercel (`/api/telegram/webhook`) so it
  * does not need a separate 24/7 polling process.
  *
- * NOTE: orkestr.eu deploy watchdog expects an HTTP listener on the port.
+ * NOTE: orkestr.eu deploy watchdog expects an HTTP listener to be running.
  * This worker starts a minimal HTTP server on the PORT env var (defaults to
  * 3000) just to pass the health check, then continues its polling loop.
  */
@@ -18,8 +18,10 @@ const TREASURY_ADDRESS = process.env.PHANTOM_SOL_ADDRESS || '3FfRM3fzySeMmKsWNND
 const NTFY_TOPIC = process.env.NTFY_TOPIC || 'OSIRIS';
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS || 30000);
 const HTTP_PORT = Number(process.env.PORT || process.env.WORKER_HTTP_PORT || 3000);
+const SELF_HEALTH_CHECK_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
 
 let lastSignature = '';
+let lastSelfHealthAlert = 0;
 
 // ── HTTP server for orkestr.eu health check ──────────────────────────────────
 
@@ -121,6 +123,21 @@ async function checkMonitoringHealth() {
   }
 }
 
+// ── Self health check ────────────────────────────────────────────────────────
+
+async function checkSelfHealth() {
+  try {
+    const response = await fetch(`http://localhost:${HTTP_PORT}/health`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(5000),
+    });
+    return response.ok;
+  } catch (err) {
+    console.error('[worker] Self health check error:', err);
+    return false;
+  }
+}
+
 // ── Main loop ────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -148,6 +165,17 @@ async function main() {
       if (!healthy) {
         console.warn('[worker] Monitoring health check failed');
         await sendNtfy('OSIRIS Monitor', 'Health check failed', 'default');
+      }
+
+      // Self health check
+      const selfHealthy = await checkSelfHealth();
+      if (!selfHealthy) {
+        const now = Date.now();
+        if (now - lastSelfHealthAlert > SELF_HEALTH_CHECK_COOLDOWN_MS) {
+          console.warn('[worker] Self health check failed');
+          await sendNtfy('OSIRIS Self Health Check Failed', `Worker at localhost:${HTTP_PORT} is not responding`, 'high');
+          lastSelfHealthAlert = now;
+        }
       }
     } catch (err) {
       console.error('[worker] Monitoring error:', err);
