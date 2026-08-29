@@ -10,8 +10,7 @@
  */
 
 const TREASURY_ADDRESS = process.env.PHANTOM_SOL_ADDRESS || '3FfRM3fzySeMmKsWNND4vgajS6eKzWtnb5qDbFfbhxUk';
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
-const TELEGRAM_ADMIN_ID = process.env.TELEGRAM_ADMIN_ID || '';
+const NTFY_TOPIC = process.env.NTFY_TOPIC || 'OSIRIS';
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS || 30000);
 
 let lastSignature = '';
@@ -54,19 +53,23 @@ async function pollTreasury(): Promise<string | null> {
   }
 }
 
-async function sendTelegram(chatId: string, text: string): Promise<void> {
-  if (!TELEGRAM_BOT_TOKEN || !chatId) {
+async function sendNtfy(title: string, message: string, priority: 'default' | 'high' | 'urgent' = 'default'): Promise<void> {
+  if (!NTFY_TOPIC) {
     return;
   }
 
   try {
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+      headers: {
+        'Content-Type': 'text/plain',
+        'Title': title,
+        'Priority': String(priority === 'urgent' ? 5 : priority === 'high' ? 4 : 3),
+      },
+      body: message,
     });
   } catch (err) {
-    console.error('[worker] Telegram send failed:', err);
+    console.error('[worker] ntfy send failed:', err);
   }
 }
 
@@ -94,28 +97,30 @@ async function main() {
   console.log('[worker] Starting OSIRIS monitor worker...');
   console.log('[worker] Treasury:', TREASURY_ADDRESS);
   console.log('[worker] Poll interval:', POLL_INTERVAL_MS, 'ms');
+  console.log('[worker] ntfy topic:', NTFY_TOPIC);
 
-  if (!TELEGRAM_BOT_TOKEN) {
-    console.warn('[worker] TELEGRAM_BOT_TOKEN not set; notifications disabled');
+  if (!NTFY_TOPIC) {
+    console.warn('[worker] NTFY_TOPIC not set; notifications disabled');
   }
-  if (!TELEGRAM_ADMIN_ID) {
-    console.warn('[worker] TELEGRAM_ADMIN_ID not set; admin notifications disabled');
-  }
+
+  await sendNtfy('OSIRIS Worker', 'Monitor worker started', 'high');
 
   const interval = setInterval(async () => {
     try {
       const signature = await pollTreasury();
       if (signature) {
         console.log(`[worker] Payment detected via fallback: ${signature}`);
-        await sendTelegram(TELEGRAM_ADMIN_ID, `Payment detected via fallback monitor: ${signature}`);
+        await sendNtfy('Payment Detected', `Signature: ${signature}`, 'high');
       }
 
       const healthy = await checkMonitoringHealth();
       if (!healthy) {
         console.warn('[worker] Monitoring health check failed');
+        await sendNtfy('OSIRIS Monitor', 'Health check failed', 'default');
       }
     } catch (err) {
       console.error('[worker] Monitoring error:', err);
+      await sendNtfy('OSIRIS Monitor Error', String(err), 'urgent');
     }
   }, POLL_INTERVAL_MS);
 
