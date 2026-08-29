@@ -1,0 +1,29 @@
+: Caddyfile for OSIRIS — auto TLS via Let's Encrypt.
+: Run `caddy run --config Caddyfile`
+
+{
+  # Global options
+  email admin@example.com
+  acme_ca https://acme-v02.api.letsencrypt.org/directory
+}
+
+# Production hostnames
+osiris.example.com {
+  reverse_proxy localhost:3000
+  encode gzip
+  header / {
+    # Additional security headers beyond middleware
+    Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+    X-Robots-Tag "noindex, nofollow"
+  }
+  # Logging
+  log {
+    output file /var/log/caddy/osiris-access.log
+    format json
+  }
+}
+
+# Dev/local fallback
+localhost:3000 {
+  reverse_proxy localhost:3000
+}

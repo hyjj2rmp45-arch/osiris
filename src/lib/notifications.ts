@@ -65,7 +65,7 @@ export async function sendAdminAlert(message: string): Promise<void> {
  * Send notification to user via their preferred channel
  */
 export async function sendUserNotification(
-  telegramId: number,
+  telegramId: string | number,
   message: string,
   priority: 'low' | 'medium' | 'high' | 'critical' = 'medium'
 ): Promise<NotificationLog> {

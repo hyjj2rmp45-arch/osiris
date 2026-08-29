@@ -4,11 +4,6 @@ const nextConfig = {
   reactStrictMode: true,
   outputFileTracingRoot: __dirname,
   // Explicitly use webpack in dev for stability
-  experimental: {
-    webpackBuildInstrument: false,
-    webpackNodeInterop: true,
-  },
-  // Use webpack instead of Turbopack in development
   pageExtensions: ['tsx', 'ts', 'jsx', 'js'],
   images: {
     remotePatterns: [

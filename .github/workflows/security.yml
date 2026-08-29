@@ -1,0 +1,86 @@
+name: Security Gates
+
+on:
+  push:
+    branches: ['main', 'master']
+  pull_request:
+    branches: ['main', 'master']
+  schedule:
+    - cron: '0 0 * * 1' # Weekly Monday midnight
+
+jobs:
+  build:
+    name: Build & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - name: Run TypeScript check
+        run: npx tsc --noEmit
+      - name: Run ESLint
+        run: pnpm exec eslint src/ --ext .ts,.tsx
+      - name: Run Prettier check
+        run: pnpm exec prettier --check src/
+      - name: Run build
+        run: pnpm build
+
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - name: Run pnpm audit
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pnpm-audit-report
+          path: docs/audit-report-*.txt
+          retention-days: 30
+
+  secrets-scan:
+    name: Secrets Detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for hardcoded secrets
+        run: |
+          if grep -rE "(private_key|secret_key|api_key|password|token|AUTH|SECRET)\s*[:=]\s*['\"][^'\"]{10,}['\"]" src/ --include="*.ts" --include="*.tsx" --exclude-dir=node_modules; then
+            echo "⚠️  Potential hardcoded secrets detected"
+            exit 1
+          fi
+          echo "✅ No obvious hardcoded secrets found"
+        continue-on-error: true
+
+  license-check:
+    name: License Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - name: Check for AGPL/GPL dependencies
+        run: |
+          if pnpm list --depth=0 --json 2>/dev/null | grep -E '"license":"(AGPL|GPL)"' > /dev/null 2>&1; then
+            echo "⚠️  AGPL/GPL licensed dependencies found - review required"
+            exit 1
+          fi
+          echo "✅ No AGPL/GPL dependencies detected"
+        continue-on-error: true

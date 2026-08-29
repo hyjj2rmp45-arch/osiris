@@ -467,8 +467,11 @@ export async function processPayment(
       ))
       .limit(1);
 
-    if (existingAccount.length > 1) {
-      return handleMultiAccountWallet(existingAccount[0].users.id, context.userId, payment.from);
+    if (existingAccount.length > 0) {
+      const account = existingAccount[0];
+      if (account) {
+        return handleMultiAccountWallet(account.users.id, context.userId, payment.from);
+      }
     }
   }
 

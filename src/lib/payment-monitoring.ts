@@ -13,17 +13,17 @@ const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
  */
 export interface MonitoringConfig {
   heliusEnabled: boolean;
-  heliusApiKey?: string;
-  heliusWebhookUrl?: string;
+  heliusApiKey?: string | undefined;
+  heliusWebhookUrl?: string | undefined;
   fallbackPollingEnabled: boolean;
   pollingIntervalMs: number;
   maxPollAttempts: number;
   solscanEnabled: boolean;
-  solscanApiKey?: string;
+  solscanApiKey?: string | undefined;
   alchemyEnabled: boolean;
-  alchemyApiKey?: string;
+  alchemyApiKey?: string | undefined;
   quickNodeEnabled: boolean;
-  quickNodeApiKey?: string;
+  quickNodeApiKey?: string | undefined;
 }
 
 const DEFAULT_CONFIG: MonitoringConfig = {

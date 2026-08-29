@@ -2,74 +2,26 @@ services:
   postgres:
     image: postgres:15
     environment:
-      - POSTGRES_USER=${POSTGRES_USER:-osiris_user}
+      - POSTGRES_USER=osiris_user
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB:-osiris}
+      - POSTGRES_DB=osiris
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-osiris_user}"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U osiris_user"]
+      interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
 
   redis:
     image: redis:6
-    volumes:
-      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
 
-  app:
-    image: osiris:latest
-    ports:
-      - "3000:3000"
-    environment:
-      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-osiris}
-      - REDIS_URL=redis://redis:6379
-      - NODE_ENV=production
-      - PHANTOM_SOL_ADDRESS=${PHANTOM_SOL_ADDRESS}
-      - HELIUS_API_KEY=${HELIUS_API_KEY}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_ADMIN_ID=${TELEGRAM_ADMIN_ID}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - app-logs:/app/logs
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
-      interval: 10s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    restart: unless-stopped
-
-  backup:
-    image: alpine:latest
-    volumes:
-      - postgres-backups:/backups
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER:-osiris_user}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_HOST=postgres
-      - POSTGRES_DB=${POSTGRES_DB:-osiris}
-      - BACKUP_DIR=/backups
-    command: ["sh", "-c", "pg_dump -h postgres -U ${POSTGRES_USER} ${POSTGRES_DB} > /backups/backup-$(date +%F).sql"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
 volumes:
   postgres-data:
-  redis-data:
-  app-logs:
-  postgres-backups:

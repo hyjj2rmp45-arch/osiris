@@ -1,0 +1,34 @@
+title = "gitleaks"
+version = 8
+
+[[rules]]
+id = "generic-api-key"
+regex = "(?i)(api[_-]?key|apikey|api_secret|api[_-]?secret)\\s*[:=]\\s*[\"']?[A-Za-z0-9_\\-]{20,}"
+
+[[rules]]
+id = "telegram-bot-token"
+regex = "(?i)(telegram[_-]?bot[_-]?token|bot_token)\\s*[:=]\\s*[\"']?[0-9]{8,10}:[\\w-]{20,}"
+
+[[rules]]
+id = "solana-private-key"
+regex = "(?i)(private[_-]?key|secret[_-]?key)\\s*[:=]\\s*[\"']?[A-Za-z0-9]{88}"
+
+[[rules]]
+id = "generic-secret"
+regex = "(?i)(secret|password|passwd|pwd)\\s*[:=]\\s*[\"']?[A-Za-z0-9_!@#$%^&*()]{8,}"
+
+[[rules]]
+id = "encryption-key"
+regex = "(?i)(encryption[_-]?key|enc[_-]?key|dek|kek)\\s*[:=]\\s*[\"']?[A-Fa-f0-9]{32,}"
+
+[[rules]]
+id = "database-url"
+regex = "(?i)(database[_-]?url|db[_-]?url)\\s*[:=]\\s*[\"']?[a-zA-Z][a-zA-Z0-9+.-]*://[^\\s]+"
+
+[allowlist]
+paths = [
+  "node_modules/**",
+  ".next/**",
+  "docs/**",
+  "**/*.md",
+]
