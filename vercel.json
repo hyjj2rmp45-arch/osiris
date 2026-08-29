@@ -1,4 +1,10 @@
 {
+  "crons": [
+    {
+      "path": "/api/cron/watchdog",
+      "schedule": "*/5 * * * *"
+    }
+  ],
   "functions": {
     "src/pages/api/cron/watchdog.ts": {
       "maxDuration": 10
