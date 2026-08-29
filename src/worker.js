@@ -8,32 +8,36 @@
  * The Telegram bot uses webhooks via Vercel (`/api/telegram/webhook`) so it
  * does not need a separate 24/7 polling process.
  *
- * NOTE: orkestr.eu deploy watchdog expects an HTTP listener to be running.
+ * NOTE: orkestr.eu deploy watchdog expects an HTTP listener on the port.
  * This worker starts a minimal HTTP server on the PORT env var (defaults to
  * 3000) just to pass the health check, then continues its polling loop.
  */
 
+const http = require('http');
 const TREASURY_ADDRESS = process.env.PHANTOM_SOL_ADDRESS || '3FfRM3fzySeMmKsWNND4vgajS6eKzWtnb5qDbFfbhxUk';
 const NTFY_TOPIC = process.env.NTFY_TOPIC || 'OSIRIS';
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS || 30000);
-const HTTP_PORT = Number(process.env.WORKER_HTTP_PORT || 3000);
+const HTTP_PORT = Number(process.env.PORT || process.env.WORKER_HTTP_PORT || 3000);
 
 let lastSignature = '';
-let httpServer;
 
-const express = require('express');
-const app = express();
-const server = app.listen(HTTP_PORT, '0.0.0.0', () => {
+// ── HTTP server for orkestr.eu health check ──────────────────────────────────
+
+const server = http.createServer((req, res) => {
+  if (req.url === '/health' || req.url === '/') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }));
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+});
+
+server.listen(HTTP_PORT, '0.0.0.0', () => {
   console.log(`[worker] HTTP health listener on 0.0.0.0:${HTTP_PORT}`);
 });
 
-app.get('/', (req, res) => {
-  res.send('OSIRIS Worker is running');
-});
-
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+// ── Solana polling ─────────────────────────────────────────────────────────────
 
 async function pollTreasury() {
   const rpcUrl = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
@@ -73,6 +77,8 @@ async function pollTreasury() {
   }
 }
 
+// ── Notifications ──────────────────────────────────────────────────────────────
+
 async function sendNtfy(title, message, priority) {
   if (!NTFY_TOPIC) {
     return;
@@ -93,6 +99,8 @@ async function sendNtfy(title, message, priority) {
   }
 }
 
+// ── Health check ─────────────────────────────────────────────────────────────
+
 async function checkMonitoringHealth() {
   try {
     const rpcUrl = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
@@ -112,6 +120,8 @@ async function checkMonitoringHealth() {
     return false;
   }
 }
+
+// ── Main loop ────────────────────────────────────────────────────────────────
 
 async function main() {
   console.log('[worker] Starting OSIRIS monitor worker...');
