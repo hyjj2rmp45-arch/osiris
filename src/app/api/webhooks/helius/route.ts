@@ -16,8 +16,12 @@ const circuitBreaker = new CircuitBreaker({
 
 const WEBHOOK_TIMESTAMP_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes
 
+function getWebhookSecret(): string | undefined {
+  return process.env.HELIUS_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET;
+}
+
 function verifySignature(payload: string, signature: string): boolean {
-  const secret = process.env.WEBHOOK_SECRET;
+  const secret = getWebhookSecret();
   if (!secret) return false;
   const hmac = crypto.createHmac('sha256', secret).update(payload).digest('hex');
   const expected = Buffer.from(hmac, 'hex');
