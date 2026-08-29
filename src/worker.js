@@ -7,13 +7,33 @@
  * This worker intentionally does NOT run the Telegram bot polling loop.
  * The Telegram bot uses webhooks via Vercel (`/api/telegram/webhook`) so it
  * does not need a separate 24/7 polling process.
+ *
+ * NOTE: orkestr.eu deploy watchdog expects an HTTP listener to be running.
+ * This worker starts a minimal HTTP server on the PORT env var (defaults to
+ * 3000) just to pass the health check, then continues its polling loop.
  */
 
 const TREASURY_ADDRESS = process.env.PHANTOM_SOL_ADDRESS || '3FfRM3fzySeMmKsWNND4vgajS6eKzWtnb5qDbFfbhxUk';
 const NTFY_TOPIC = process.env.NTFY_TOPIC || 'OSIRIS';
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS || 30000);
+const HTTP_PORT = Number(process.env.WORKER_HTTP_PORT || 3000);
 
 let lastSignature = '';
+let httpServer;
+
+const express = require('express');
+const app = express();
+const server = app.listen(HTTP_PORT, '0.0.0.0', () => {
+  console.log(`[worker] HTTP health listener on 0.0.0.0:${HTTP_PORT}`);
+});
+
+app.get('/', (req, res) => {
+  res.send('OSIRIS Worker is running');
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 async function pollTreasury() {
   const rpcUrl = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
@@ -98,6 +118,7 @@ async function main() {
   console.log('[worker] Treasury:', TREASURY_ADDRESS);
   console.log('[worker] Poll interval:', POLL_INTERVAL_MS, 'ms');
   console.log('[worker] ntfy topic:', NTFY_TOPIC);
+  console.log('[worker] HTTP health port:', HTTP_PORT);
 
   if (!NTFY_TOPIC) {
     console.warn('[worker] NTFY_TOPIC not set; notifications disabled');
@@ -127,7 +148,10 @@ async function main() {
   process.on('SIGINT', () => {
     console.log('[worker] Shutting down...');
     clearInterval(interval);
-    process.exit(0);
+    server.close(() => {
+      console.log('[worker] HTTP server closed');
+      process.exit(0);
+    });
   });
 
   console.log('[worker] Monitor worker running');
