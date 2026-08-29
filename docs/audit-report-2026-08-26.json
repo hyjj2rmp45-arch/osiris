@@ -1,0 +1,120 @@
+{
+  "advisories": {
+    "1110992": {
+      "findings": [
+        {
+          "version": "1.0.0-beta.14",
+          "paths": [
+            ".>@telegram-apps/init-data-node>@telegram-apps/transformers>valibot",
+            ".>@telegram-apps/sdk-react>@telegram-apps/sdk>@telegram-apps/bridge>@telegram-apps/transformers>valibot",
+            ".>@telegram-apps/sdk-react>@telegram-apps/sdk>@telegram-apps/transformers>valibot"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        },
+        {
+          "version": "1.0.0",
+          "paths": [
+            ".>@telegram-apps/sdk-react>@telegram-apps/sdk>@telegram-apps/bridge>valibot",
+            ".>@telegram-apps/sdk-react>@telegram-apps/sdk>valibot"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1110992,
+      "title": "Valibot has a ReDoS vulnerability in `EMOJI_REGEX`",
+      "module_name": "valibot",
+      "vulnerable_versions": ">=0.31.0 <1.2.0",
+      "patched_versions": ">=1.2.0",
+      "severity": "high",
+      "cwe": "CWE-1333",
+      "github_advisory_id": "GHSA-vqpr-j7v3-hqw9",
+      "url": "https://github.com/advisories/GHSA-vqpr-j7v3-hqw9"
+    },
+    "1124066": {
+      "findings": [
+        {
+          "version": "0.34.5",
+          "paths": [
+            ".>better-auth>next>sharp",
+            ".>next>sharp"
+          ],
+          "dev": false,
+          "optional": true,
+          "bundled": false
+        }
+      ],
+      "id": 1124066,
+      "title": "sharp inherited vulnerabilities in libvips: CVE-2026-33327, CVE-2026-33328, CVE-2026-35590, CVE-2026-35591",
+      "module_name": "sharp",
+      "vulnerable_versions": "<0.35.0",
+      "patched_versions": ">=0.35.0",
+      "severity": "high",
+      "cwe": "CWE-1395",
+      "github_advisory_id": "GHSA-f88m-g3jw-g9cj",
+      "url": "https://github.com/advisories/GHSA-f88m-g3jw-g9cj"
+    },
+    "1124252": {
+      "findings": [
+        {
+          "version": "8.4.31",
+          "paths": [
+            ".>better-auth>next>postcss",
+            ".>next>postcss"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1124252,
+      "title": "PostCSS: Arbitrary file read and information disclosure via attacker-controlled sourceMappingURL in CSS comments",
+      "module_name": "postcss",
+      "vulnerable_versions": "<=8.5.11",
+      "patched_versions": ">=8.5.12",
+      "severity": "high",
+      "cwe": "CWE-22, CWE-200",
+      "github_advisory_id": "GHSA-6g55-p6wh-862q",
+      "url": "https://github.com/advisories/GHSA-6g55-p6wh-862q"
+    },
+    "1139510": {
+      "findings": [
+        {
+          "version": "8.4.31",
+          "paths": [
+            ".>better-auth>next>postcss",
+            ".>next>postcss"
+          ],
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "id": 1139510,
+      "title": "PostCSS: Path Traversal in Previous Source Map Auto-Loading (sourceMappingURL) leads to Arbitrary .map File Disclosure",
+      "module_name": "postcss",
+      "vulnerable_versions": "<=8.5.17",
+      "patched_versions": ">=8.5.18",
+      "severity": "high",
+      "cwe": "CWE-22",
+      "github_advisory_id": "GHSA-r28c-9q8g-f849",
+      "url": "https://github.com/advisories/GHSA-r28c-9q8g-f849"
+    }
+  },
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 1,
+      "moderate": 5,
+      "high": 4,
+      "critical": 0
+    },
+    "dependencies": 681,
+    "devDependencies": 483,
+    "optionalDependencies": 169,
+    "totalDependencies": 1302
+  }
+}

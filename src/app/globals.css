@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   OSIRIS DESIGN SYSTEM — "Obsidian & Gold"
+   Locked palette per OSIRIS_PLATFORM_DOCUMENTATION §6
+   ============================================================ */
+
+:root {
+  /* Foundation (70%) */
+  --obsidian: #050507;
+  --obsidian-light: #0a0a0d;
+  --obsidian-surface: #111114;
+  --obsidian-elevated: #191920;
+  --obsidian-border: #202027;
+  --obsidian-muted: #2a2a33;
+
+  /* Emphasis (10%) */
+  --gold: #d4af37;
+  --gold-bright: #efbf04;
+  --gold-pale: #f5e6a8;
+  --gold-dim: #8c7b00;
+
+  /* Text */
+  --text-primary: #f0ede5;
+  --text-secondary: #a09b8c;
+  --text-muted: #5a5560;
+
+  /* Semantic */
+  --success: #2d8a4e;
+  --error: #c0392b;
+  --warning: #d4a017;
+
+  /* Motion */
+  --ease-osiris: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body), Inter, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Focus rings — visible on all surfaces */
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(212, 175, 55, 0.3);
+  color: var(--text-primary);
+}
+
+/* Scrollbar — quiet, obsidian-toned */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--obsidian-light);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--obsidian-muted);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gold-dim);
+}
+
+/* Reduced motion — disable all non-essential movement */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Keyboard navigation state for tables */
+.row-keyboard-active {
+  background: rgba(212, 175, 55, 0.06);
+}
+
+/* Command palette selected row */
+.cmd-palette-selected {
+  background: rgba(212, 175, 55, 0.1);
+  color: var(--gold);
+}
+
+/* Numbers are the content: tabular figures stop live values from jittering */
+.font-mono {
+  font-variant-numeric: tabular-nums lining-nums;
+}
