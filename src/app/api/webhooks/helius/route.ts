@@ -30,9 +30,9 @@ function verifySignature(payload: string, signature: string): boolean {
 }
 
 function verifyWebhookTimestamp(timestamp: number): boolean {
-  const now = Date.now();
-  const diff = Math.abs(now - timestamp);
-  return diff <= WEBHOOK_TIMESTAMP_TOLERANCE_MS;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const diff = Math.abs(nowSec - timestamp);
+  return diff <= Math.floor(WEBHOOK_TIMESTAMP_TOLERANCE_MS / 1000);
 }
 
 async function isIdempotent(nonce: string): Promise<boolean> {
