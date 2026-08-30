@@ -2,10 +2,10 @@ name: Worker CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
     paths: ['src/worker.js', 'Dockerfile', 'known-fixes.json']
   pull_request:
-    branches: [main]
+    branches: [master]
     paths: ['src/worker.js', 'Dockerfile', 'known-fixes.json']
 
 jobs:
