@@ -1,6 +1,6 @@
 export const maxDuration = 10;
 
-export async function GET(req) {
+export async function GET(req: Request) {
   const url = process.env.WORKER_WATCHDOG2_URL || 'https://osiris.orkestr.run/health';
   const ntfyTopic = process.env.NTFY_TOPIC || 'OSIRIS';
 
@@ -20,11 +20,12 @@ export async function GET(req) {
     }
     return new Response(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }), { status: 200 });
   } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
     await fetch(`https://ntfy.sh/${ntfyTopic}`, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain', 'Title': '🛑 OSIRIS Worker Down (watchdog2)', 'Priority': '5' },
-      body: `Worker health check error: ${err.message}\nURL: ${url}\nTime: ${new Date().toISOString()}`,
+      body: `Worker health check error: ${errorMessage}\nURL: ${url}\nTime: ${new Date().toISOString()}`,
     });
-    return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: errorMessage }), { status: 500 });
   }
 }
