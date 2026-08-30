@@ -1,3 +1,4 @@
+# worker-only image for orkestr.eu
 FROM node:20-alpine
 WORKDIR /app
 COPY package.json package-lock.json* ./
