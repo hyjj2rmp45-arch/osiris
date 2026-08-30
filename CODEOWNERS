@@ -1,0 +1,13 @@
+# CODEOWNERS
+
+# Default owner for everything
+* @hyjj2rmp45-arch
+
+# Worker and security-critical files require explicit approval
+src/worker.js @hyjj2rmp45-arch
+known-fixes.json @hyjj2rmp45-arch
+Dockerfile @hyjj2rmp45-arch
+.github/workflows/* @hyjj2rmp45-arch
+.pre-commit-config.yaml @hyjj2rmp45-arch
+DEVIATIONS.md @hyjj2rmp45-arch
+docs/RUNBOOK.md @hyjj2rmp45-arch
