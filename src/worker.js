@@ -1,8 +1,9 @@
 /**
  * OSIRIS Always-On Monitor Worker with Severity-Based Auto-Approval + Security Hardening
  *
- * Purpose: 
+ * Purpose:
  * 1. Keep fallback payment detection and notification dispatch alive
+ * 2. Trigger Worker CI on branch protection setup
  * 2. Aggregate errors from various sources with severity levels (1-5)
  * 3. Auto-approve and apply fixes for severity >= 4 immediately
  * 4. Queue fixes for severity <= 2 for later human approval
