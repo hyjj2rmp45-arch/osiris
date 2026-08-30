@@ -1,0 +1,17 @@
+# .pre-commit-config.yaml
+# Gitleaks secret scanning + basic checks before commits
+
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: forbid-new-errors
+        name: forbid-new-errors
+        entry: bash -c 'git diff --cached --name-only | grep -q "errors.json" && echo "Do not commit errors.json" && exit 1 || exit 0'
+        language: system
+        pass_filenames: []
+        always_run: true
