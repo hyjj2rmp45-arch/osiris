@@ -1047,6 +1047,30 @@ async function processQueueBacklog() {
   }
 }
 
+// Human-in-the-Loop GitHub PR Creation
+async function createHumanInTheLoopPR(error, fix, confidence) {
+  try {
+    const timestamp = Date.now();
+    const branchName = 'hitl/approval-' + timestamp;
+    const title = '[OSIRIS HITL] ' + fix.description.substring(0, 70);
+    const body = 'Pattern: ' + fix.pattern + ' | Confidence: ' + (confidence * 100).toFixed(0) + '% | Error: ' + error.message + ' | Source: ' + error.source + ' | Action: ' + fix.action + ' | Auto-created by OSIRIS ' + new Date().toISOString();
+    const { execSync } = require('child_process');
+    execSync('git fetch origin', { cwd: process.cwd(), timeout: 10000 });
+    execSync('git checkout -b ' + branchName, { cwd: process.cwd(), timeout: 10000 });
+    execSync('git commit --allow-empty -m ' + JSON.stringify(title), { cwd: process.cwd(), timeout: 10000 });
+    execSync('git push origin ' + branchName, { cwd: process.cwd(), timeout: 15000 });
+    execSync('gh pr create --title ' + JSON.stringify(title) + ' --body ' + JSON.stringify(body) + ' --base master --head ' + branchName, { cwd: process.cwd(), timeout: 15000 });
+    await sendNtfy('📝 HITL PR created', 'Pattern: ' + fix.pattern + ' | Confidence: ' + (confidence*100).toFixed(0) + '%', 'high');
+    await appendAuditLog('hitl_pr_created', { errorId: error.id, pattern: fix.pattern, confidence, branch: branchName });
+    return { success: true, branch: branchName };
+  } catch (err) {
+    console.error('[hitl] PR creation failed:', err);
+    await sendNtfy('❌ HITL PR failed', 'Pattern: ' + fix.pattern + ' | Error: ' + err.message, 'urgent');
+    await appendAuditLog('hitl_pr_failed', { errorId: error.id, pattern: fix.pattern, error: err.message });
+    return { success: false, error: err.message };
+  }
+}
+
 
 // ML Error Classification
 class MLErrorClassifier {
@@ -1203,7 +1227,7 @@ async function recordError(errorData) {
       return;
     }
     if (route === 'HITL_PR') {
-      await createApprovalPR(error, matchingFix, confidence);
+      await createHumanInTheLoopPR(error, matchingFix, confidence);
       return;
     }
     if (route === 'QUEUE') {
