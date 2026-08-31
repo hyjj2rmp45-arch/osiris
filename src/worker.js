@@ -302,6 +302,63 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   
+
+// SLO dashboard endpoint
+if (pathname === '/api/slo/status' && method === 'GET') {
+  const cbStatus = fixCircuitBreaker.getStatus();
+  const blastStatus = getBlastRadiusStatus();
+  const budgetRemaining = ERROR_BUDGET.getRemainingBudget(sloWindowStart, sloWindowErrors, sloWindowTotal);
+  const burnRate = ERROR_BUDGET.getBurnRate(sloWindowStart, sloWindowErrors, sloWindowTotal);
+  
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    
+    // Overall health
+    status: cbStatus.state === 'OPEN' ? 'degraded' : 'ok',
+    
+    // Error budget
+    errorBudget: {
+      remaining: budgetRemaining.toFixed(2) + '%',
+      burnRate: burnRate.toFixed(2) + 'x',
+      totalErrors: sloWindowErrors,
+      totalRequests: sloWindowTotal,
+      alertThreshold: '70%',
+      criticalThreshold: '90%'
+    },
+    
+    // Circuit breaker
+    circuitBreaker: {
+      state: cbStatus.state,
+      failureCount: cbStatus.failureCount,
+      patterns: cbStatus.patterns
+    },
+    
+    // Blast radius
+    blastRadius: blastStatus,
+    
+    // Fix success rate
+    fixSuccessRate: goldenSignals.errors.fixSuccessRate,
+    
+    // Golden signals
+    goldenSignals: goldenSignals.getSummary(),
+    
+    // Sidecar
+    sidecar: sidecar.getStatus(),
+    
+    // Reconciliation
+    reconciliation: {
+      lastRun: lastReconciliation,
+      driftCount: reconciliationDriftCount
+    },
+    
+    // Active traces
+    activeTraces: tracer.getActiveTraces().length
+  }, null, 2));
+  return;
+}
+
   res.writeHead(404);
   res.end();
 });
