@@ -287,6 +287,17 @@ async function recordError(errorData) {
   const matchingFix = knownFixes.find(f => matchesPattern(error, f.pattern));
   
   if (matchingFix && !fs.existsSync(path.join(__dirname, '..', 'NO_AUTO_FIX'))) {
+    // Check blast radius limits before attempting fix
+    const blastCheck = checkBlastRadius(matchingFix.pattern);
+    if (!blastCheck.allowed) {
+      await sendNtfy(`⏳ Blast radius: ${blastCheck.reason}`, `Pattern: ${matchingFix.pattern}`, 'high');
+      return;
+    }
+    // Check circuit breaker before attempting fix
+    if (!fixCircuitBreaker.canAttempt(matchingFix.pattern)) {
+      await sendNtfy(`⚡ Circuit breaker OPEN: ${matchingFix.pattern}`, 'Fix blocked — try again after 30min recovery', 'high');
+      return;
+    }
     if (severity >= 4) {
       // Critical path — check rate limiter
       const rl = checkRateLimit(matchingFix.pattern);
@@ -328,11 +339,16 @@ async function recordError(errorData) {
     } else {
       // Severity 3 - auto-apply
       const result = await applyFixSecure(error, matchingFix);
-      if (result.success) {
-        await sendNtfy(`🛠️ SEV${severity} auto-fixed`, matchingFix.description, 'high');
-      } else {
-        await sendNtfy(`❌ SEV${severity} auto-fix failed`, `${result.error}`, 'high');
-      }
+            if (result.success) {
+              // Record success: circuit breaker reset + blast radius tracking
+              fixCircuitBreaker.onSuccess(matchingFix.pattern);
+              recordFixApplication(matchingFix.pattern);
+              await sendNtfy(`✅ SEV${severity} auto-fixed`, `Fix: ${matchingFix.description}`, 'high');
+            } else {
+              // Record failure: circuit breaker increment
+              fixCircuitBreaker.onFailure(matchingFix.pattern);
+              await sendNtfy(`❌ SEV${severity} auto-fix failed`, `Fix: ${matchingFix.description}\\nError: ${result.error}`, 'urgent');
+            }
       await appendAuditLog('auto_fix_applied_sev3', {
         errorId: error.id, pattern: matchingFix.pattern, description: matchingFix.description,
         success: result.success, error: result.error || null
