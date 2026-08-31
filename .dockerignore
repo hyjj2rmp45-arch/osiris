@@ -1,0 +1,12 @@
+node_modules
+.git
+.github
+*.md
+.env*
+dist
+coverage
+.vscode
+.idea
+*.log
+pnpm-lock.yaml
+package.json
