@@ -23,9 +23,9 @@ jobs:
       - name: Run TypeScript check
         run: npx tsc --noEmit
       - name: Run ESLint
-        run: pnpm exec eslint src/ --ext .js,.jsx,.ts,.tsx || echo "ESLint warnings (non-blocking)"
+        run: pnpm dlx eslint src/ --ext .js,.jsx,.ts,.tsx --config .eslintrc.json
       - name: Run Prettier check
-        run: pnpm exec prettier --check src/ || echo "Prettier warnings (non-blocking)"
+        run: pnpm dlx prettier --check src/ --config .prettierrc.json || echo "Prettier warnings (non-blocking)"
       - name: Run build
         run: pnpm build || echo "Build step warning (non-blocking)"
 
@@ -43,7 +43,6 @@ jobs:
       - name: Run pnpm audit
         run: |
           pnpm audit --audit-level=high || echo "Dependency audit: vulnerabilities found (see report)"
-          mkdir -p docs
 
   secrets-scan:
     name: Secrets Detection
