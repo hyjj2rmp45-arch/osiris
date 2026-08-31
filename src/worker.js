@@ -28,6 +28,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { ProductionReadiness } = require('./readiness');
 const { SecurityHardening } = require('./security-hardening');
 const { DisasterRecoveryBackup } = require('./backup');
 const { ComplianceEngine } = require('./compliance');
@@ -1308,6 +1309,17 @@ class RunbookEngine {
 const runbookEngine = new RunbookEngine();
 const selfHealingEngine = new SelfHealingEngine();
 const postmortemGenerator = new PostmortemGenerator();
+const errorImpactScorer = new ErrorImpactScorer();
+const rootCauseAnalyzer = new RootCauseAnalyzer();
+const featureFlags = new FeatureFlags();
+const chaosEngine = new ChaosEngine();
+const tlsRotator = new TLSCertificateRotator();
+const dnsFailover = new DNSFailover();
+const auditExporter = new AuditExporter();
+const complianceEngine = new ComplianceEngine();
+const drBackup = new DisasterRecoveryBackup();
+const securityHardening = new SecurityHardening();
+const readiness = new ProductionReadiness();
 
 async function recordError(errorData) {
   const correlationId = generateCorrelationId();
