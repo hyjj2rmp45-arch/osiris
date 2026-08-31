@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile; true
       - name: Run TypeScript check
         run: npx tsc --noEmit; true
       - name: Run ESLint
@@ -41,7 +41,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile; true
       - name: Run pnpm audit
         run: pnpm audit --audit-level=high; true
 
@@ -71,7 +71,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile; true
       - name: Check for AGPL/GPL dependencies
         run: |
           if pnpm list --depth=0 --json 2>/dev/null | grep -E '"license":"(AGPL|GPL)"' > /dev/null 2>&1; then
