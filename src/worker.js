@@ -28,6 +28,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { SecurityHardening } = require('./security-hardening');
 const { DisasterRecoveryBackup } = require('./backup');
 const { ComplianceEngine } = require('./compliance');
 const { AuditExporter } = require('./audit-export');
@@ -1312,6 +1313,10 @@ async function recordError(errorData) {
   const correlationId = generateCorrelationId();
   const traceId = tracer.startTrace('recordError', correlationId);
   const severity = Math.max(1, Math.min(5, Number(errorData.severity) || 3));
+  if (!securityHardening.validateSeverity(errorData.severity)) {
+    await appendAuditLog('security_invalid_severity', { value: errorData.severity });
+    return;
+  }
   const error = {
     id: errorData.id || generateId(),
     correlationId,
