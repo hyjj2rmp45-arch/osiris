@@ -28,6 +28,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { RootCauseAnalyzer } = require('./rca');
 const { ErrorImpactScorer } = require('./error-impact');
 const { SelfHealingEngine } = require('./self-healing');
 const { PostmortemGenerator } = require('./postmortem');
@@ -1914,6 +1915,9 @@ async function processWeeklyBatch() {
   
   lastWeeklyBatch = today;
 
+  // Root cause analysis
+  rootCauseAnalyzer.analyze(recentErrors);
+  
   // Generate AI postmortem
   const postmortem = await postmortemGenerator.generate(recentErrors, recentErrors.filter(e => e.fixed).map(e => ({ success: true })));
   if (postmortem) {
