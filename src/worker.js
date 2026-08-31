@@ -28,6 +28,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { CredentialRotationReminders } = require('./credential-rotation');
 const { DependencyUpdateChecker } = require('./dependency-updates');
 const { APIGateway } = require('./gateway');
 const { ProductionReadiness } = require('./readiness');
@@ -1324,6 +1325,7 @@ const securityHardening = new SecurityHardening();
 const readiness = new ProductionReadiness();
 const apiGateway = new APIGateway();
 const dependencyChecker = new DependencyUpdateChecker();
+const credentialRotation = new CredentialRotationReminders();
 
 async function recordError(errorData) {
   const correlationId = generateCorrelationId();
