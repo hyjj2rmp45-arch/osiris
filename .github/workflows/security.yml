@@ -14,42 +14,45 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 11
-        continue-on-error: true
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'pnpm'
+      - name: Install pnpm
+        run: npm install -g pnpm@11
         continue-on-error: true
-      - run: pnpm install --frozen-lockfile; true
+      - run: pnpm install --frozen-lockfile
+        continue-on-error: true
       - name: Run TypeScript check
-        run: npx tsc --noEmit; true
+        run: npx tsc --noEmit
+        continue-on-error: true
       - name: Run ESLint
-        run: pnpm dlx eslint src/ --ext .js,.jsx,.ts,.tsx; true
+        run: pnpm dlx eslint src/ --ext .js,.jsx,.ts,.tsx
+        continue-on-error: true
       - name: Run Prettier check
-        run: pnpm dlx prettier --check src/; true
+        run: pnpm dlx prettier --check src/
+        continue-on-error: true
       - name: Run build
-        run: pnpm build; true
+        run: pnpm build
+        continue-on-error: true
 
   audit:
     name: Dependency Audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 11
-        continue-on-error: true
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'pnpm'
+      - name: Install pnpm
+        run: npm install -g pnpm@11
         continue-on-error: true
-      - run: pnpm install --frozen-lockfile; true
+      - run: pnpm install --frozen-lockfile
+        continue-on-error: true
       - name: Run pnpm audit
-        run: pnpm audit --audit-level=high; true
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
 
   secrets-scan:
     name: Secrets Detection
@@ -57,34 +60,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check for hardcoded secrets
+        continue-on-error: true
         run: |
           if grep -rE "(private_key|secret_key|api_key|password|token|AUTH|SECRET)\s*[:=]\s*['\"][^'\\\"]{10,}['\"]" src/ .github/ --include="*.ts" --include="*.tsx" --include="*.js" --exclude-dir=node_modules 2>/dev/null; then
             echo "Potential hardcoded secrets detected"
           else
             echo "No obvious hardcoded secrets found"
           fi
-        continue-on-error: true
 
   license-check:
     name: License Compliance
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 11
-        continue-on-error: true
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'pnpm'
+      - name: Install pnpm
+        run: npm install -g pnpm@11
         continue-on-error: true
-      - run: pnpm install --frozen-lockfile; true
+      - run: pnpm install --frozen-lockfile
+        continue-on-error: true
       - name: Check for AGPL/GPL dependencies
+        continue-on-error: true
         run: |
           if pnpm list --depth=0 --json 2>/dev/null | grep -E '"license":"(AGPL|GPL)"' > /dev/null 2>&1; then
             echo "AGPL/GPL licensed dependencies found - review required"
           else
             echo "No AGPL/GPL dependencies detected"
           fi
-        continue-on-error: true
