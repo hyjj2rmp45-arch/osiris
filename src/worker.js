@@ -540,6 +540,127 @@ function resetSLOIfNeeded() {
   }
 }
 
+
+// ── Golden Signals Metrics ─────────────────────────────────────────────────
+
+class GoldenSignals {
+  constructor() {
+    this.latency = {
+      fixApplication: [], // ms
+      healthCheck: [],
+      errorProcessing: [],
+      recent: [] // last 100 samples
+    };
+    this.traffic = {
+      requestsPerMinute: 0,
+      errorsPerMinute: 0,
+      fixesPerMinute: 0,
+      requestTimestamps: [],
+      errorTimestamps: [],
+      fixTimestamps: []
+    };
+    this.errors = {
+      total: 0,
+      bySeverity: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+      fixSuccessRate: 0,
+      fixSuccessCount: 0,
+      fixFailureCount: 0
+    };
+    this.saturation = {
+      errorBufferSize: 0,
+      pendingApprovals: 0,
+      circuitBreakerOpen: false,
+      queueDepth: 0
+    };
+    this.windowMs = 60000; // 1 minute windows
+  }
+
+  recordLatency(type, ms) {
+    if (this.latency[type]) {
+      this.latency[type].push(ms);
+      this.latency.recent.push({ type, ms, ts: Date.now() });
+      if (this.latency[type].length > 100) this.latency[type].shift();
+      if (this.latency.recent.length > 1000) this.latency.recent.shift();
+    }
+  }
+
+  recordRequest() {
+    this.traffic.requestTimestamps.push(Date.now());
+    this._trimOld(this.traffic.requestTimestamps);
+    this._recalcTraffic();
+  }
+
+  recordError(severity) {
+    this.errors.total++;
+    this.errors.bySeverity[severity] = (this.errors.bySeverity[severity] || 0) + 1;
+    this.traffic.errorTimestamps.push(Date.now());
+    this._trimOld(this.traffic.errorTimestamps);
+    this._recalcTraffic();
+  }
+
+  recordFix(success) {
+    if (success) this.errors.fixSuccessCount++;
+    else this.errors.fixFailureCount++;
+    this.errors.fixSuccessRate = this.errors.fixSuccessCount / (this.errors.fixSuccessCount + this.errors.fixFailureCount) || 0;
+    this.traffic.fixTimestamps.push(Date.now());
+    this._trimOld(this.traffic.fixTimestamps);
+    this._recalcTraffic();
+  }
+
+  updateSaturation() {
+    this.saturation.errorBufferSize = errorBuffer.length;
+    this.saturation.pendingApprovals = Object.keys(pendingApprovals).length;
+    this.saturation.circuitBreakerOpen = fixCircuitBreaker.getStatus().state === 'OPEN';
+    this.saturation.queueDepth = Object.keys(pendingApprovals).length;
+  }
+
+  _trimOld(arr) {
+    const cutoff = Date.now() - this.windowMs;
+    while (arr.length && arr[0] < cutoff) arr.shift();
+  }
+
+  _recalcTraffic() {
+    const now = Date.now();
+    this.traffic.requestsPerMinute = this.traffic.requestTimestamps.filter(t => now - t < this.windowMs).length;
+    this.traffic.errorsPerMinute = this.traffic.errorTimestamps.filter(t => now - t < this.windowMs).length;
+    this.traffic.fixesPerMinute = this.traffic.fixTimestamps.filter(t => now - t < this.windowMs).length;
+  }
+
+  getSummary() {
+    const latency = this.latency.recent.slice(-20);
+    const avgLatency = latency.length ? latency.reduce((s, l) => s + l.ms, 0) / latency.length : 0;
+    
+    return {
+      latency: {
+        avgMs: avgLatency.toFixed(1),
+        samples: latency.length,
+        recent: latency.slice(-5)
+      },
+      traffic: {
+        requestsPerMinute: this.traffic.requestsPerMinute,
+        errorsPerMinute: this.traffic.errorsPerMinute,
+        fixesPerMinute: this.traffic.fixesPerMinute
+      },
+      errors: {
+        total: this.errors.total,
+        bySeverity: this.errors.bySeverity,
+        fixSuccessRate: (this.errors.fixSuccessRate * 100).toFixed(1) + '%'
+      },
+      saturation: this.saturation
+    };
+  }
+}
+
+const goldenSignals = new GoldenSignals();
+
+// Metrics endpoint
+if (pathname === '/metrics' && method === 'GET') {
+  goldenSignals.updateSaturation();
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(goldenSignals.getSummary(), null, 2));
+  return;
+}
+
 // ── Error Handling ─────────────────────────────────────
 
 async function recordError(errorData) {
@@ -556,6 +677,7 @@ async function recordError(errorData) {
   
   errorBuffer.push(error);
   recordSLOError();
+  goldenSignals.recordError(severity);
   
   const now = Date.now();
   if (now - lastErrorFlush > ERROR_FLUSH_INTERVAL_MS) {
@@ -665,10 +787,12 @@ async function recordError(errorData) {
         // Record success: circuit breaker reset + blast radius tracking
         fixCircuitBreaker.onSuccess(matchingFix.pattern);
         recordFixApplication(matchingFix.pattern);
+        goldenSignals.recordFix(true);
         await sendNtfy(`✅ SEV${severity} auto-fixed`, `Fix: ${matchingFix.description}`, 'high');
       } else {
         // Record failure: circuit breaker increment
         fixCircuitBreaker.onFailure(matchingFix.pattern);
+        goldenSignals.recordFix(false);
         await sendNtfy(`❌ SEV${severity} auto-fix failed`, `Fix: ${matchingFix.description}\nError: ${result.error}`, 'urgent');
       }
       await appendAuditLog('auto_fix_applied_sev3', {
@@ -1144,8 +1268,10 @@ async function main() {
         await sendNtfy('Payment Detected', `Signature: ${signature}`, 'high');
       }
 
-      const healthy = await checkMonitoringHealth();
-      if (!healthy) {
+      const healthStart = Date.now();
+    const healthy = await checkMonitoringHealth();
+    goldenSignals.recordLatency('healthCheck', Date.now() - healthStart);
+    if (!healthy) {
         await sendNtfy('OSIRIS Monitor', 'Health check failed', 'default');
       }
 
