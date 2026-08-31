@@ -48,7 +48,7 @@ const heliusSchema = z.object({
   signature: z.string(),
   slot: z.number().int(),
   timestamp: z.number().int(),
-  events: z.array(z.record(z.unknown())),
+  events: z.array(z.record(z.string(), z.unknown())),
 });
 
 const pumpTradeSchema = z.object({

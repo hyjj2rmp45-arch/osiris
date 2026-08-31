@@ -24,7 +24,7 @@ const webhookPayloadSchema = z.object({
   event_type: z.string(),
   mint: z.string(),
   creator: z.string(),
-  params: z.record(z.unknown()),
+  params: z.record(z.string(), z.unknown()),
   timestamp: z.number(),
 });
 

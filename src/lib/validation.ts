@@ -68,7 +68,7 @@ export const feeComputeSchema = z.object({
 export const killswitchEngageSchema = z.object({
   trigger: z.enum(['circuit_breaker', 'rate_limit', 'sim_failure', 'admin_panic', 'telegram_halt']),
   source: z.string().min(1),
-  details: z.record(z.unknown()).optional(),
+  details: z.record(z.string(), z.unknown()).optional(),
   confirmation: z.string().optional(),
 });
 
@@ -82,7 +82,7 @@ export const multisigCreateSchema = z.object({
   proposalType: z.string().min(1).default('halt_recovery'),
   title: z.string().min(1),
   description: z.string().optional(),
-  payload: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
   expiresAt: z.number().int().positive().optional(),
 });
 
@@ -96,7 +96,7 @@ export const rugcheckSchema = z.object({
 
 export const webhookSchema = z.object({
   source: z.string().min(1),
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
 });
 
 export const solanaUpgradeSchema = z.object({
@@ -107,6 +107,6 @@ export const solanaUpgradeSchema = z.object({
 
 export const telegramWebhookSchema = z.object({
   update_id: z.number().int().positive(),
-  message: z.record(z.unknown()).optional(),
-  callback_query: z.record(z.unknown()).optional(),
+  message: z.record(z.string(), z.unknown()).optional(),
+  callback_query: z.record(z.string(), z.unknown()).optional(),
 });
