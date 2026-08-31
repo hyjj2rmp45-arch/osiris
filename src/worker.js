@@ -28,6 +28,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { FeatureFlags } = require('./feature-flags');
 const { RootCauseAnalyzer } = require('./rca');
 const { ErrorImpactScorer } = require('./error-impact');
 const { SelfHealingEngine } = require('./self-healing');
@@ -1010,7 +1011,7 @@ let lastQueueDrain = 0;
 
 async function processQueueBacklog() {
   const now = Date.now();
-  if (now - lastQueueDrain < QUEUE_DRAIN_INTERVAL_MS) return;
+  if (now - lastQueueDrain < QUEUE_DRAIN_INTERVAL_MS || !featureFlags.isEnabled('enableQueueDrain')) return;
   lastQueueDrain = now;
 
   const ids = Object.keys(pendingApprovals);
