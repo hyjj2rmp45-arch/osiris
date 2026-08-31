@@ -28,6 +28,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { SLOBurnRateAlerting } = require('./burn-rate');
+const { IncidentResponseAutomation } = require('./incident-response');
 const { ComplianceReporter } = require('./compliance-reporting');
 const { KeyRotationPolicy } = require('./key-rotation');
 const { SecretManagementIntegration } = require('./secret-management');
@@ -1326,6 +1328,8 @@ const dnsFailover = new DNSFailover();
 const auditExporter = new AuditExporter();
 const complianceEngine = new ComplianceEngine();
 const complianceReporter = new ComplianceReporter(complianceEngine);
+const incidentResponse = new IncidentResponseAutomation();
+const burnRateAlerting = new SLOBurnRateAlerting();
 const drBackup = new DisasterRecoveryBackup();
 const securityHardening = new SecurityHardening();
 const readiness = new ProductionReadiness();
@@ -1399,6 +1403,7 @@ async function recordError(errorData) {
   errorBuffer.push(error);
   recordSLOError();
   goldenSignals.recordError(severity);
+  burnRateAlerting.recordError(severity);
   mlClassifier.train(error);
   errorImpactScorer.score(error);
   

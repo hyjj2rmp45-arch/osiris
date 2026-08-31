@@ -76,3 +76,4 @@ docker-compose.yml
 .neon
 
 .vercel
+.env*
