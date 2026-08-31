@@ -1047,6 +1047,90 @@ async function processQueueBacklog() {
   }
 }
 
+
+// ML Error Classification
+class MLErrorClassifier {
+  constructor() {
+    this.vocabulary = new Map();
+    this.documents = []; // { features: Map, severity: number, pattern: string, timestamp: number }
+    this.maxDocs = 5000;
+    this.trained = false;
+  }
+
+  _tokenize(text) {
+    return (text || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 2);
+  }
+
+  _getFeatures(text) {
+    const tokens = this._tokenize(text);
+    const features = new Map();
+    for (const token of tokens) {
+      features.set(token, (features.get(token) || 0) + 1);
+    }
+    return features;
+  }
+
+  _cosineSimilarity(a, b) {
+    let dot = 0, magA = 0, magB = 0;
+    for (const [k, v] of a) {
+      magA += v * v;
+      if (b.has(k)) dot += v * b.get(k);
+    }
+    for (const [, v] of b) magB += v * v;
+    const denom = Math.sqrt(magA) * Math.sqrt(magB);
+    return denom === 0 ? 0 : dot / denom;
+  }
+
+  train(error) {
+    const features = this._getFeatures(error.message + ' ' + (error.source || ''));
+    this.documents.push({
+      features,
+      severity: error.severity,
+      pattern: error.pattern || null,
+      timestamp: Date.now()
+    });
+    if (this.documents.length > this.maxDocs) this.documents.shift();
+    this.trained = true;
+  }
+
+  predict(error) {
+    if (!this.trained || this.documents.length === 0) return null;
+    const features = this._getFeatures(error.message + ' ' + (error.source || ''));
+    let best = { similarity: 0, severity: error.severity, pattern: null };
+    for (const doc of this.documents) {
+      const sim = this._cosineSimilarity(features, doc.features);
+      if (sim > best.similarity) {
+        best = { similarity: sim, severity: doc.severity, pattern: doc.pattern, doc };
+      }
+    }
+    if (best.similarity < 0.3) return null;
+    return {
+      predictedSeverity: best.severity,
+      predictedPattern: best.pattern,
+      confidence: Math.min(0.95, best.similarity),
+      similarErrors: this.documents.filter(d => d.pattern === best.pattern).length
+    };
+  }
+
+  getStats() {
+    const patterns = new Map();
+    for (const doc of this.documents) {
+      if (doc.pattern) patterns.set(doc.pattern, (patterns.get(doc.pattern) || 0) + 1);
+    }
+    return {
+      trained: this.trained,
+      documentCount: this.documents.length,
+      vocabularySize: this.vocabulary.size,
+      topPatterns: Array.from(patterns.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    };
+  }
+}
+
+const mlClassifier = new MLErrorClassifier();
 // ── Error Handling ─────────────────────────────────────
 
 async function recordError(errorData) {
@@ -1067,6 +1151,7 @@ async function recordError(errorData) {
   errorBuffer.push(error);
   recordSLOError();
   goldenSignals.recordError(severity);
+  mlClassifier.train(error);
   
   const now = Date.now();
   if (now - lastErrorFlush > ERROR_FLUSH_INTERVAL_MS) {
