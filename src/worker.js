@@ -199,6 +199,8 @@ async function runReconciliationLoop() {
 
 const server = http.createServer(async (req, res) => {
   const { method, url } = req;
+  const correlationId = generateCorrelationId();
+  req.correlationId = correlationId;
   const urlObj = new URL(`http://localhost${url}`);
   const pathname = urlObj.pathname;
 
@@ -661,12 +663,54 @@ if (pathname === '/metrics' && method === 'GET') {
   return;
 }
 
+
+// ── Structured Logging with Correlation IDs ─────────────────────────────────────────────────
+
+let correlationId = 0;
+
+function generateCorrelationId() {
+  return `req_${Date.now()}_${++correlationId}`;
+}
+
+function logStructured(level, message, data = {}) {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    level,
+    message,
+    correlationId: data.correlationId || null,
+    ...data
+  };
+  
+  // Remove undefined values
+  Object.keys(entry).forEach(k => entry[k] === undefined && delete entry[k]);
+  
+  const line = JSON.stringify(entry);
+  
+  switch (level) {
+    case 'error':
+      console.error(line);
+      break;
+    case 'warn':
+      console.warn(line);
+      break;
+    case 'debug':
+      if (process.env.DEBUG) console.log(line);
+      break;
+    default:
+      console.log(line);
+  }
+  
+  return entry;
+}
+
 // ── Error Handling ─────────────────────────────────────
 
 async function recordError(errorData) {
+  const correlationId = generateCorrelationId();
   const severity = Math.max(1, Math.min(5, Number(errorData.severity) || 3));
   const error = {
     id: errorData.id || generateId(),
+    correlationId,
     timestamp: errorData.timestamp || new Date().toISOString(),
     severity,
     source: errorData.source || 'unknown',
