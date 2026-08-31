@@ -867,6 +867,114 @@ function logStructured(level, message, data = {}) {
   return entry;
 }
 
+
+// ── Error Fingerprinting & Deduplication ─────────────────────────────────────────────────
+
+class ErrorFingerprinter {
+  constructor() {
+    this.fingerprints = new Map(); // fingerprint -> { count, firstSeen, lastSeen, errors: [] }
+    this.maxFingerprints = 10000;
+  }
+
+  fingerprint(error) {
+    // Create a stable fingerprint from error properties
+    const parts = [
+      error.source || 'unknown',
+      error.message || '',
+      JSON.stringify(error.details || {})
+    ];
+    
+    // Simple hash function
+    let hash = 0;
+    const str = parts.join('|');
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    
+    return `fp_${Math.abs(hash).toString(36)}`;
+  }
+
+  record(error) {
+    const fp = this.fingerprint(error);
+    const now = Date.now();
+    
+    if (!this.fingerprints.has(fp)) {
+      this.fingerprints.set(fp, {
+        count: 0,
+        firstSeen: now,
+        lastSeen: now,
+        errors: []
+      });
+    }
+    
+    const entry = this.fingerprints.get(fp);
+    entry.count++;
+    entry.lastSeen = now;
+    entry.errors.push({
+      id: error.id,
+      timestamp: error.timestamp,
+      severity: error.severity
+    });
+    
+    // Keep only last 100 errors per fingerprint
+    if (entry.errors.length > 100) entry.errors.shift();
+    
+    this._prune();
+    
+    return fp;
+  }
+
+  getStats() {
+    const entries = Array.from(this.fingerprints.values());
+    return {
+      totalFingerprints: this.fingerprints.size,
+      totalErrors: entries.reduce((s, e) => s + e.count, 0),
+      topFingerprints: entries
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10)
+        .map(e => ({
+          count: e.count,
+          firstSeen: new Date(e.firstSeen).toISOString(),
+          lastSeen: new Date(e.lastSeen).toISOString()
+        }))
+    };
+  }
+
+  isDuplicate(error) {
+    const fp = this.fingerprint(error);
+    const entry = this.fingerprints.get(fp);
+    if (!entry) return false;
+    
+    // Consider duplicate if seen in last 5 minutes
+    const fiveMinutes = 5 * 60 * 1000;
+    return (Date.now() - entry.lastSeen) < fiveMinutes;
+  }
+
+  _prune() {
+    // Remove fingerprints not seen in last hour
+    const oneHour = 60 * 60 * 1000;
+    const cutoff = Date.now() - oneHour;
+    
+    for (const [fp, entry] of this.fingerprints) {
+      if (entry.lastSeen < cutoff) {
+        this.fingerprints.delete(fp);
+      }
+    }
+    
+    // Hard limit
+    if (this.fingerprints.size > this.maxFingerprints) {
+      const oldest = Array.from(this.fingerprints.entries())
+        .sort((a, b) => a[1].lastSeen - b[1].lastSeen)
+        .slice(0, 1000);
+      oldest.forEach(([fp]) => this.fingerprints.delete(fp));
+    }
+  }
+}
+
+const errorFingerprinter = new ErrorFingerprinter();
+
 // ── Error Handling ─────────────────────────────────────
 
 async function recordError(errorData) {
@@ -891,6 +999,19 @@ async function recordError(errorData) {
   const now = Date.now();
   if (now - lastErrorFlush > ERROR_FLUSH_INTERVAL_MS) {
     await flushErrors();
+  }
+  
+  // Fingerprint error for deduplication
+  const fingerprint = errorFingerprinter.record(error);
+  const isDuplicate = errorFingerprinter.isDuplicate(error);
+  
+  if (isDuplicate) {
+    logStructured('debug', 'Duplicate error suppressed', { 
+      errorId: error.id, 
+      fingerprint,
+      correlationId 
+    });
+    return;
   }
   
   const matchingFix = knownFixes.find(f => matchesPattern(error, f.pattern));
