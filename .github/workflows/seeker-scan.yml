@@ -3,6 +3,9 @@ name: Seeker Scan
 on:
   push:
     branches: [master]
+    paths:
+      - 'src/worker.js'
+      - 'known-fixes.json'
   pull_request:
     branches: [master]
 
@@ -12,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 11
       - uses: actions/setup-node@v4
@@ -34,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 11
       - uses: actions/setup-node@v4
@@ -64,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 11
       - uses: actions/setup-node@v4
