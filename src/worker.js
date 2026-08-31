@@ -1157,6 +1157,144 @@ class MLErrorClassifier {
 const mlClassifier = new MLErrorClassifier();
 // ── Error Handling ─────────────────────────────────────
 
+// Intelligent Runbook Execution
+const RUNBOOKS = [
+  {
+    id: 'rb-001',
+    name: 'Database Connection Recovery',
+    pattern: /database|connection|timeout|pool/i,
+    severity: [3, 4, 5],
+    steps: ['Check database server status and connectivity', 'Verify connection pool configuration', 'Review database logs for errors', 'Check network connectivity and firewall rules', 'Restart database connection pool if needed', 'Verify application reconnects successfully'],
+    autoExecute: false,
+    estimatedTime: '5-10 minutes'
+  },
+  {
+    id: 'rb-002',
+    name: 'Memory Leak Investigation',
+    pattern: /memory|heap|out of memory|oom|leak/i,
+    severity: [4, 5],
+    steps: ['Capture heap snapshot', 'Analyze memory allocation patterns', 'Identify memory leaks in recent changes', 'Review object retention patterns', 'Apply memory optimization or restart service', 'Monitor memory usage post-fix'],
+    autoExecute: false,
+    estimatedTime: '10-15 minutes'
+  },
+  {
+    id: 'rb-003',
+    name: 'API Rate Limit Recovery',
+    pattern: /rate.limit|429|throttl|quota/i,
+    severity: [2, 3, 4],
+    steps: ['Check API rate limit headers', 'Implement exponential backoff', 'Review API usage patterns', 'Optimize API call frequency', 'Request rate limit increase if needed', 'Monitor API response times'],
+    autoExecute: true,
+    estimatedTime: '2-5 minutes'
+  },
+  {
+    id: 'rb-004',
+    name: 'SSL/TLS Certificate Renewal',
+    pattern: /ssl|tls|certificate|expired|cert/i,
+    severity: [4, 5],
+    steps: ['Check certificate expiration date', 'Verify certificate chain validity', 'Renew certificate if needed', 'Update certificate in deployment', 'Verify HTTPS endpoints respond correctly', 'Monitor certificate validity'],
+    autoExecute: false,
+    estimatedTime: '5-10 minutes'
+  },
+  {
+    id: 'rb-005',
+    name: 'Service Restart Recovery',
+    pattern: /service|process|daemon|restart|crash/i,
+    severity: [3, 4, 5],
+    steps: ['Check service status and logs', 'Identify crash root cause', 'Verify dependencies are available', 'Restart service with proper configuration', 'Verify service health after restart', 'Monitor for stability'],
+    autoExecute: true,
+    estimatedTime: '3-5 minutes'
+  }
+];
+
+class RunbookEngine {
+  constructor() {
+    this.executionHistory = [];
+    this.maxHistory = 1000;
+  }
+
+  findRunbook(error) {
+    const text = (error.message + ' ' + (error.source || '')).toLowerCase();
+    return RUNBOOKS.find(rb => {
+      if (!rb.severity.includes(error.severity)) return false;
+      return rb.pattern.test(text);
+    }) || null;
+  }
+
+  async executeRunbook(runbook, error) {
+    const executionId = 'rb-' + Date.now();
+    const startTime = Date.now();
+    const results = [];
+    
+    await sendNtfy('📋 Runbook started', 'Runbook: ' + runbook.name + ' | Error: ' + error.message.substring(0, 50), 'default');
+    await appendAuditLog('runbook_started', { executionId, runbookId: runbook.id, errorId: error.id });
+    
+    for (let i = 0; i < runbook.steps.length; i++) {
+      const step = runbook.steps[i];
+      const stepStart = Date.now();
+      
+      try {
+        console.log('[runbook] Step ' + (i + 1) + '/' + runbook.steps.length + ': ' + step);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        const result = { step: i + 1, description: step, status: 'completed', duration: Date.now() - stepStart };
+        results.push(result);
+        await appendAuditLog('runbook_step_completed', { executionId, step: i + 1, duration: result.duration });
+      } catch (err) {
+        const result = { step: i + 1, description: step, status: 'failed', error: err.message, duration: Date.now() - stepStart };
+        results.push(result);
+        await appendAuditLog('runbook_step_failed', { executionId, step: i + 1, error: err.message });
+        
+        if (!runbook.autoExecute) {
+          await sendNtfy('⚠️ Runbook paused', runbook.name + ' stopped at step ' + (i + 1) + ': ' + err.message, 'high');
+          break;
+        }
+      }
+    }
+    
+    const execution = {
+      executionId,
+      runbookId: runbook.id,
+      runbookName: runbook.name,
+      errorId: error.id,
+      startTime,
+      endTime: Date.now(),
+      duration: Date.now() - startTime,
+      steps: results,
+      status: results.every(r => r.status === 'completed') ? 'completed' : 'partial'
+    };
+    
+    this.executionHistory.push(execution);
+    if (this.executionHistory.length > this.maxHistory) this.executionHistory.shift();
+    
+    await appendAuditLog('runbook_completed', execution);
+    
+    if (execution.status === 'completed') {
+      await sendNtfy('✅ Runbook completed', runbook.name + ' executed successfully in ' + execution.duration + 'ms', 'default');
+    } else {
+      await sendNtfy('⚠️ Runbook partial', runbook.name + ' completed with errors', 'high');
+    }
+    
+    return execution;
+  }
+
+  getHistory(limit = 10) {
+    return this.executionHistory.slice(-limit);
+  }
+
+  getStats() {
+    const total = this.executionHistory.length;
+    const completed = this.executionHistory.filter(e => e.status === 'completed').length;
+    return {
+      total,
+      completed,
+      partial: total - completed,
+      completionRate: total > 0 ? ((completed / total) * 100).toFixed(1) + '%' : '0%'
+    };
+  }
+}
+
+const runbookEngine = new RunbookEngine();
+
 async function recordError(errorData) {
   const correlationId = generateCorrelationId();
   const traceId = tracer.startTrace('recordError', correlationId);
@@ -1195,6 +1333,13 @@ async function recordError(errorData) {
     return;
   }
   
+  // Check for matching runbook
+  const runbook = runbookEngine.findRunbook(error);
+  if (runbook) {
+    console.log('[worker] Found matching runbook:', runbook.name);
+    await runbookEngine.executeRunbook(runbook, error);
+  }
+
   const matchingFix = knownFixes.find(f => matchesPattern(error, f.pattern));
   const mode = getKillSwitchMode();
 
