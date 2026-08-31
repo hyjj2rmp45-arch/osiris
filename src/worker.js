@@ -44,6 +44,49 @@ const HMAC_SECRET = process.env.KNOWN_FIXES_HMAC_SECRET || '';
 const FIXES_LOG = path.join(__dirname, '..', 'fixes.log');
 const MAX_CRITICAL_FIXES_PER_HOUR = 5;
 const FIX_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+const CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3;
+const CIRCUIT_BREAKER_RECOVERY_MINUTES = 30;
+
+class FixCircuitBreaker {
+  constructor(opts = {}) {
+    this.state = 'CLOSED';
+    this.failureCount = 0;
+    this.lastFailureTime = null;
+    this.recoveryTimeoutMs = (opts.recoveryTimeoutMin || CIRCUIT_BREAKER_RECOVERY_MINUTES) * 60 * 1000;
+    this.failureThreshold = opts.failureThreshold || CIRCUIT_BREAKER_FAILURE_THRESHOLD;
+    this.patterns = {};
+  }
+  onSuccess(p = 'default') {
+    this.failureCount = 0;
+    this.state = 'CLOSED';
+    this.patterns[p] = {count: 0, state: 'CLOSED'};
+  }
+  onFailure(p = 'default') {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+    this.patterns[p] = this.patterns[p] || {count: 0, state: 'CLOSED'};
+    this.patterns[p].count++;
+    if (this.patterns[p].count >= this.failureThreshold) {
+      this.patterns[p].state = 'OPEN';
+      this.patterns[p].lastOpen = Date.now();
+      console.log(`[circuit] OPEN for ${p} (${this.patterns[p].count} failures)`);
+    }
+  }
+  canAttempt(p = 'default') {
+    const s = this.patterns[p] || {state: 'CLOSED'};
+    if (s.state === 'OPEN') {
+      const elapsed = Date.now() - (s.lastOpen || 0);
+      if (elapsed >= this.recoveryTimeoutMs) {
+        s.state = 'HALF_OPEN';
+        return true;
+      }
+      return false;
+    }
+    return true;
+  }
+}
+
+let fixCircuitBreaker = new FixCircuitBreaker();
 
 let lastSignature = '';
 let lastSelfHealthAlert = 0;
@@ -53,6 +96,20 @@ let errorBuffer = [];
 let knownFixes = [];
 let pendingApprovals = {}; // id -> {error, fix, queuedAt}
 let fixRateLimiter = {}; // pattern -> {count, resetTime}
+
+// Blast radius enforcement
+const BLAST_RADIUS = {
+  maxFixesPerHour: 5,
+  maxFixesPerPattern: 3,
+  cooldownBetweenFixesMs: 10 * 60 * 1000,
+  lastFixTimestamps: [],
+  patternFixTimestamps: {}
+};
+
+let currentFixPattern = null;
+let currentFixRollbackFn = null;
+
+// ── Circuit breaker integrated into recordError ──────────
 
 // ── HTTP server for orkestr.eu health check and approval ──────────
 
