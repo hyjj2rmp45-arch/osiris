@@ -28,6 +28,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { BackupIntegrityVerifier } = require('./backup-integrity');
+const { SecretRotationEnforcer } = require('./secret-rotation');
 const { CredentialRotationReminders } = require('./credential-rotation');
 const { DependencyUpdateChecker } = require('./dependency-updates');
 const { APIGateway } = require('./gateway');
@@ -1323,9 +1325,49 @@ const complianceEngine = new ComplianceEngine();
 const drBackup = new DisasterRecoveryBackup();
 const securityHardening = new SecurityHardening();
 const readiness = new ProductionReadiness();
+const backupIntegrity = new BackupIntegrityVerifier();
 const apiGateway = new APIGateway();
 const dependencyChecker = new DependencyUpdateChecker();
 const credentialRotation = new CredentialRotationReminders();
+const secretRotation = new SecretRotationEnforcer();
+
+
+// Credential Storage Best Practices
+class CredentialStoragePolicy {
+  constructor() {
+    this.rules = [
+      { level: 'block', patterns: [/password/i, /secret/i, /private_key/i, /api_key/i, /token/i], action: 'env-or-vault' },
+      { level: 'warn', patterns: [/connection_string/i, /dsn/i, /endpoint/i], action: 'review' }
+    ];
+    this.findings = [];
+  }
+
+  evaluate(obj) {
+    const text = JSON.stringify(obj || {});
+    const findings = [];
+    for (const rule of this.rules) {
+      for (const pattern of rule.patterns) {
+        if (pattern.test(text)) {
+          findings.push({ level: rule.level, pattern: pattern.source, action: rule.action });
+        }
+      }
+    }
+    this.findings.push(...findings);
+    return findings;
+  }
+
+  getFindings(limit = 100) {
+    return this.findings.slice(-limit);
+  }
+
+  getStats() {
+    const counts = { block: 0, warn: 0 };
+    for (const f of this.findings) counts[f.level] = (counts[f.level] || 0) + 1;
+    return { total: this.findings.length, ...counts };
+  }
+}
+
+const credentialStoragePolicy = new CredentialStoragePolicy();
 
 async function recordError(errorData) {
   const correlationId = generateCorrelationId();
@@ -1335,6 +1377,7 @@ async function recordError(errorData) {
     await appendAuditLog('security_invalid_severity', { value: errorData.severity });
     return;
   }
+  const credentialFindings = credentialStoragePolicy.evaluate(errorData);
   const error = {
     id: errorData.id || generateId(),
     correlationId,
