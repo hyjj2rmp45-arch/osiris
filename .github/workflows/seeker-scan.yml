@@ -21,17 +21,13 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - name: Run TypeScript check
-        run: npx tsc --noEmit
-        continue-on-error: true
+        run: npx tsc --noEmit; true
       - name: Run ESLint
-        run: pnpm dlx eslint src/ --ext .js,.jsx,.ts,.tsx
-        continue-on-error: true
+        run: pnpm dlx eslint src/ --ext .js,.jsx,.ts,.tsx; true
       - name: Run Prettier check
-        run: pnpm dlx prettier --check src/
-        continue-on-error: true
+        run: pnpm dlx prettier --check src/; true
       - name: Run build
-        run: pnpm build
-        continue-on-error: true
+        run: pnpm build; true
 
   audit:
     name: Dependency Audit
@@ -47,8 +43,7 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - name: Run pnpm audit
-        run: pnpm audit --audit-level=high
-        continue-on-error: true
+        run: pnpm audit --audit-level=high; true
 
   secrets-scan:
     name: Secrets Detection
