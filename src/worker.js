@@ -28,6 +28,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { PostmortemGenerator } = require('./postmortem');
 
 const TREASURY_ADDRESS = process.env.PHANTOM_SOL_ADDRESS || '3FfRM3fzySeMmKsWNND4vgajS6eKzWtnb5qDbFfbhxUk';
 const NTFY_TOPIC = process.env.NTFY_TOPIC || 'OSIRIS';
@@ -1294,6 +1295,7 @@ class RunbookEngine {
 }
 
 const runbookEngine = new RunbookEngine();
+const postmortemGenerator = new PostmortemGenerator();
 
 async function recordError(errorData) {
   const correlationId = generateCorrelationId();
@@ -1899,6 +1901,13 @@ async function processWeeklyBatch() {
   }
   
   lastWeeklyBatch = today;
+
+  // Generate AI postmortem
+  const postmortem = await postmortemGenerator.generate(recentErrors, recentErrors.filter(e => e.fixed).map(e => ({ success: true })));
+  if (postmortem) {
+    console.log('[worker] Postmortem generated:', postmortem.id);
+  }
+
   await flushErrors();
 }
 
