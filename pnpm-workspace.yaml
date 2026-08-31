@@ -1,6 +1,7 @@
 allowBuilds:
   '@astryxdesign/cli': false
   '@astryxdesign/core': false
+  '@parcel/watcher': set this to true or false
   argon2: false
   bufferutil: false
   cpu-features: false

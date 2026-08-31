@@ -18,9 +18,7 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t osiris-worker:${{ github.sha }} \
-            --build-arg BUILDKIT_INLINE_CACHE=1 \
-            .
+          docker build -t osiris-worker:${{ github.sha }} .
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
