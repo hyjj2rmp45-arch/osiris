@@ -376,6 +376,113 @@ let killSwitchMode = null;
 }
 
 
+
+// ── Distributed Tracing ─────────────────────────────────────────────────
+
+class DistributedTracer {
+  constructor() {
+    this.traces = new Map(); // traceId -> span data
+    this.maxTraces = 1000;
+  }
+
+  startTrace(name, correlationId) {
+    const traceId = `trace_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const span = {
+      traceId,
+      name,
+      correlationId,
+      startTime: Date.now(),
+      endTime: null,
+      duration: null,
+      status: 'running',
+      parentSpan: null,
+      tags: {}
+    };
+    
+    this.traces.set(traceId, span);
+    this._prune();
+    
+    return traceId;
+  }
+
+  endTrace(traceId, status = 'ok') {
+    const span = this.traces.get(traceId);
+    if (!span) return null;
+    
+    span.endTime = Date.now();
+    span.duration = span.endTime - span.startTime;
+    span.status = status;
+    
+    return span;
+  }
+
+  addTag(traceId, key, value) {
+    const span = this.traces.get(traceId);
+    if (span) span.tags[key] = value;
+  }
+
+  getTrace(traceId) {
+    return this.traces.get(traceId) || null;
+  }
+
+  getActiveTraces() {
+    return Array.from(this.traces.values()).filter(t => t.status === 'running');
+  }
+
+  _prune() {
+    if (this.traces.size > this.maxTraces) {
+      const oldest = Array.from(this.traces.entries())
+        .sort((a, b) => a[1].startTime - b[1].startTime)
+        .slice(0, 100);
+      oldest.forEach(([id]) => this.traces.delete(id));
+    }
+  }
+
+  getStats() {
+    const spans = Array.from(this.traces.values());
+    const completed = spans.filter(s => s.status !== 'running');
+    const avgDuration = completed.length 
+      ? completed.reduce((s, span) => s + (span.duration || 0), 0) / completed.length 
+      : 0;
+    
+    return {
+      total: spans.length,
+      active: spans.filter(s => s.status === 'running').length,
+      completed: completed.length,
+      avgDuration: avgDuration.toFixed(1) + 'ms',
+      byStatus: spans.reduce((acc, s) => {
+        acc[s.status] = (acc[s.status] || 0) + 1;
+        return acc;
+      }, {})
+    };
+  }
+}
+
+const tracer = new DistributedTracer();
+
+// Traces endpoint
+if (pathname === '/traces' && method === 'GET') {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({
+    stats: tracer.getStats(),
+    active: tracer.getActiveTraces().slice(0, 10)
+  }, null, 2));
+  return;
+}
+
+if (pathname === '/traces/' && method === 'GET') {
+  const traceId = urlObj.searchParams.get('id');
+  if (traceId) {
+    const trace = tracer.getTrace(traceId);
+    res.writeHead(trace ? 200 : 404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(trace || { error: 'Trace not found' }));
+  } else {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Missing trace ID' }));
+  }
+  return;
+}
+
 // ── Sidecar Healing Process ─────────────────────────────────────────────────
 
 class SidecarHealer {
@@ -707,6 +814,7 @@ function logStructured(level, message, data = {}) {
 
 async function recordError(errorData) {
   const correlationId = generateCorrelationId();
+  const traceId = tracer.startTrace('recordError', correlationId);
   const severity = Math.max(1, Math.min(5, Number(errorData.severity) || 3));
   const error = {
     id: errorData.id || generateId(),
@@ -855,6 +963,8 @@ async function recordError(errorData) {
       'urgent'
     );
   }
+  
+  tracer.endTrace(traceId, 'ok');
 }
 
 // ── Security: Rate Limiting ─────────────────────────────────────
@@ -891,6 +1001,7 @@ function checkRateLimit(pattern) {
 // ── Security: Atomic Fix Application with Rollback ────────────────────────────────────────────────────
 
 async function applyFixSecure(error, fix) {
+  const traceId = tracer.startTrace('applyFix', error.correlationId);
   const backupDir = path.join(__dirname, '..', '.fix_backups');
   const timestamp = Date.now();
   const backupPath = path.join(backupDir, `pre_fix_${timestamp}.tar.gz`);
@@ -928,8 +1039,10 @@ async function applyFixSecure(error, fix) {
       await sendNtfy('❌ CRITICAL: Rollback failed', `Manual intervention needed!\nOriginal error: ${err.message}\nRollback error: ${rollbackErr.message}`, 'urgent');
     }
     
+    tracer.endTrace(traceId, 'error');
     return { success: false, error: err.message };
   }
+  tracer.endTrace(traceId, result.success ? 'ok' : 'error');
 }
 
 async function createBackup(backupPath) {
