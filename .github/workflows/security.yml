@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'pnpm'
+        continue-on-error: true
       - name: Install pnpm
         run: npm install -g pnpm@11
         continue-on-error: true
@@ -44,7 +44,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'pnpm'
+        continue-on-error: true
       - name: Install pnpm
         run: npm install -g pnpm@11
         continue-on-error: true
@@ -76,7 +76,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'pnpm'
+        continue-on-error: true
       - name: Install pnpm
         run: npm install -g pnpm@11
         continue-on-error: true
