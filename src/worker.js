@@ -212,7 +212,20 @@ const server = http.createServer(async (req, res) => {
       errorCount: errorBuffer.length,
       pendingApprovalsCount: Object.keys(pendingApprovals).length,
       security: HMAC_SECRET ? 'verified' : 'unverified',
-      killSwitchEnabled: getKillSwitchMode()
+      killSwitchEnabled: getKillSwitchMode(),
+      circuitBreaker: fixCircuitBreaker.getStatus(),
+      blastRadius: getBlastRadiusStatus(),
+      reconciliation: {
+        lastRun: lastReconciliation,
+        driftCount: reconciliationDriftCount,
+        intervalMs: reconciliationIntervalMs
+      },
+      sidecar: sidecar.getStatus(),
+      errorBudget: {
+        remaining: ERROR_BUDGET.getRemainingBudget(sloWindowStart, sloWindowErrors, sloWindowTotal).toFixed(1) + '%',
+        burnRate: ERROR_BUDGET.getBurnRate(sloWindowStart, sloWindowErrors, sloWindowTotal).toFixed(2) + 'x',
+        elapsed: Math.floor((Date.now() - sloWindowStart) / 3600000) + 'h'
+      }
     }));
     return;
   }
@@ -448,6 +461,85 @@ if (pathname === '/sidecar/status' && method === 'GET') {
   return;
 }
 
+
+// ── Error Budget Tracking ─────────────────────────────────────────────────
+
+const ERROR_BUDGET = {
+  // SLO: 99.9% success rate over 30 days = 0.1% error budget
+  sloTarget: 0.999, // 99.9%
+  windowMs: 30 * 24 * 60 * 60 * 1000, // 30 days
+  alertThreshold: 0.7, // Alert at 70% budget consumed
+  criticalThreshold: 0.9, // Critical at 90% budget consumed
+  
+  get totalBudget() {
+    return (1 - this.sloTarget) * 100; // percentage points
+  },
+  
+  getRemainingBudget(startTime, errorCount, totalRequests) {
+    if (totalRequests === 0) return this.totalBudget;
+    const actualErrorRate = errorCount / totalRequests;
+    const allowedErrors = totalRequests * (1 - this.sloTarget);
+    const remaining = allowedErrors - errorCount;
+    const remainingPercent = (remaining / allowedErrors) * 100;
+    return Math.max(0, remainingPercent);
+  },
+  
+  getBurnRate(startTime, errorCount, totalRequests) {
+    const elapsed = Date.now() - startTime;
+    if (elapsed === 0) return 0;
+    const expectedBurnRate = (1 - this.sloTarget) / (this.windowMs / 3600000); // per hour
+    const actualBurnRate = errorCount / (elapsed / 3600000);
+    return actualBurnRate / expectedBurnRate;
+  }
+};
+
+let sloWindowStart = Date.now();
+let sloWindowErrors = 0;
+let sloWindowTotal = 0;
+
+async function checkErrorBudget() {
+  const remaining = ERROR_BUDGET.getRemainingBudget(sloWindowStart, sloWindowErrors, sloWindowTotal);
+  const burnRate = ERROR_BUDGET.getBurnRate(sloWindowStart, sloWindowErrors, sloWindowTotal);
+  
+  const budgetStatus = {
+    remaining: remaining.toFixed(2) + '%',
+    burnRate: burnRate.toFixed(2) + 'x',
+    elapsed: Math.floor((Date.now() - sloWindowStart) / 3600000) + 'h',
+    errors: sloWindowErrors,
+    total: sloWindowTotal
+  };
+  
+  // Alert thresholds
+  if (remaining < (100 - ERROR_BUDGET.criticalThreshold * 100)) {
+    await sendNtfy('🚨 Error budget CRITICAL', `Only ${remaining.toFixed(1)}% budget remaining. Burn rate: ${burnRate.toFixed(1)}x`, 'urgent');
+    await appendAuditLog('error_budget_critical', budgetStatus);
+  } else if (remaining < (100 - ERROR_BUDGET.alertThreshold * 100)) {
+    await sendNtfy('⚠️ Error budget warning', `Only ${remaining.toFixed(1)}% budget remaining. Burn rate: ${burnRate.toFixed(1)}x`, 'high');
+    await appendAuditLog('error_budget_warning', budgetStatus);
+  }
+  
+  return budgetStatus;
+}
+
+function recordSLOError() {
+  sloWindowErrors++;
+  sloWindowTotal++;
+}
+
+function recordSLOSuccess() {
+  sloWindowTotal++;
+}
+
+function resetSLOIfNeeded() {
+  const elapsed = Date.now() - sloWindowStart;
+  if (elapsed >= ERROR_BUDGET.windowMs) {
+    sloWindowStart = Date.now();
+    sloWindowErrors = 0;
+    sloWindowTotal = 0;
+    console.log('[slo] Reset error budget window');
+  }
+}
+
 // ── Error Handling ─────────────────────────────────────
 
 async function recordError(errorData) {
@@ -463,6 +555,7 @@ async function recordError(errorData) {
   };
   
   errorBuffer.push(error);
+  recordSLOError();
   
   const now = Date.now();
   if (now - lastErrorFlush > ERROR_FLUSH_INTERVAL_MS) {
@@ -1062,6 +1155,8 @@ async function main() {
       if (now - lastErrorFlush > ERROR_FLUSH_INTERVAL_MS) await flushErrors();
       await processWeeklyBatch();
       await runReconciliationLoop();
+      resetSLOIfNeeded();
+      await checkErrorBudget();
       await sidecar.runCheck();
       
       const selfHealthy = await checkSelfHealth();
