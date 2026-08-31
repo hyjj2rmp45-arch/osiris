@@ -28,6 +28,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { ErrorImpactScorer } = require('./error-impact');
 const { SelfHealingEngine } = require('./self-healing');
 const { PostmortemGenerator } = require('./postmortem');
 
@@ -1318,6 +1319,7 @@ async function recordError(errorData) {
   recordSLOError();
   goldenSignals.recordError(severity);
   mlClassifier.train(error);
+  errorImpactScorer.score(error);
   
   const now = Date.now();
   if (now - lastErrorFlush > ERROR_FLUSH_INTERVAL_MS) {
