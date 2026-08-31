@@ -92,6 +92,8 @@ let lastSignature = '';
 let lastSelfHealthAlert = 0;
 let lastErrorFlush = 0;
 let lastWeeklyBatch = 0;
+let lastReconciliation = 0;
+let reconciliationDriftCount = 0;
 let errorBuffer = [];
 let knownFixes = [];
 let pendingApprovals = {}; // id -> {error, fix, queuedAt}
@@ -108,6 +110,88 @@ const BLAST_RADIUS = {
 
 let currentFixPattern = null;
 let currentFixRollbackFn = null;
+
+// ── Reconciliation / Desired-State Loop ──
+let reconciliationIntervalMs = 30 * 60 * 1000; // 30 minutes
+let desiredState = {
+  killSwitchMode: null,
+  maxFixesPerHour: 5,
+  maxFixesPerPattern: 3,
+  circuitBreakerThreshold: 3,
+  validationStages: ['health', 'smoke', 'slo', 'recovery']
+};
+
+async function runReconciliationLoop() {
+  const now = Date.now();
+  if (now - lastReconciliation < reconciliationIntervalMs) return;
+  lastReconciliation = now;
+
+  try {
+    // Verify current state matches desired state
+    const issues = [];
+
+    // 1. Check kill switch mode matches desired
+    const currentMode = getKillSwitchMode();
+    if (currentMode !== desiredState.killSwitchMode) {
+      issues.push(`Kill switch drift: current=${currentMode}, desired=${desiredState.killSwitchMode}`);
+    }
+
+    // 2. Check blast radius config
+    if (BLAST_RADIUS.maxFixesPerHour !== desiredState.maxFixesPerHour) {
+      issues.push('Blast radius config drift detected');
+    }
+
+    // 3. Check circuit breaker state
+    const cbStatus = fixCircuitBreaker.getStatus();
+    if (cbStatus.state === 'OPEN') {
+      issues.push('Circuit breaker OPEN - system in recovery mode');
+    }
+
+    // 4. Verify known-fixes.json integrity
+    if (!fs.existsSync(KNOWN_FIXES_FILE)) {
+      issues.push('CRITICAL: known-fixes.json missing');
+    } else if (HMAC_SECRET && fs.existsSync(KNOWN_FIXES_HMAC_FILE)) {
+      const data = fs.readFileSync(KNOWN_FIXES_FILE, 'utf8');
+      const storedHmac = fs.readFileSync(KNOWN_FIXES_HMAC_FILE, 'utf8').trim();
+      const computed = crypto.createHmac('sha256', HMAC_SECRET).update(data, 'utf8').digest('hex');
+      if (storedHmac !== computed) {
+        issues.push('CRITICAL: known-fixes.json HMAC mismatch');
+      }
+    }
+
+    // 5. Check worker health
+    const health = await checkMonitoringHealth();
+    if (!health) {
+      issues.push('Worker health check failed');
+    }
+
+    if (issues.length > 0) {
+      reconciliationDriftCount++;
+      console.warn(`[reconcile] Drift detected (${issues.length} issues):`, issues);
+      await sendNtfy('⚠️ Reconciliation drift detected', issues.join(' | '), 'high');
+      await appendAuditLog('reconciliation_drift', { issues, driftCount: reconciliationDriftCount });
+
+      // Auto-remediate if we can
+      for (const issue of issues) {
+        if (issue.includes('HMAC mismatch')) {
+          console.error('[reconcile] HMAC mismatch - disabling auto-fixes');
+          await sendNtfy('🚨 Security: Disabling auto-fixes due to HMAC mismatch', '', 'urgent');
+        }
+      }
+    } else {
+      if (reconciliationDriftCount > 0) {
+        console.log('[reconcile] State reconciled - no drift');
+        await sendNtfy('✅ Reconciliation complete', 'System state matches desired state', 'default');
+      }
+      reconciliationDriftCount = 0;
+    }
+
+    await appendAuditLog('reconciliation_complete', { issues: issues.length, driftCount: reconciliationDriftCount });
+  } catch (err) {
+    console.error('[reconcile] Error:', err);
+    await appendAuditLog('reconciliation_error', { error: err.message });
+  }
+}
 
 // ── Circuit breaker integrated into recordError ──────────
 
@@ -889,6 +973,7 @@ async function main() {
       const now = Date.now();
       if (now - lastErrorFlush > ERROR_FLUSH_INTERVAL_MS) await flushErrors();
       await processWeeklyBatch();
+      await runReconciliationLoop();
       
       const selfHealthy = await checkSelfHealth();
       if (!selfHealthy) {
