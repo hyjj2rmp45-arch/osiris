@@ -29,6 +29,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { PostmortemGenerator } = require('./postmortem');
+const { SelfHealingEngine } = require('./selfheal');
 
 const TREASURY_ADDRESS = process.env.PHANTOM_SOL_ADDRESS || '3FfRM3fzySeMmKsWNND4vgajS6eKzWtnb5qDbFfbhxUk';
 const NTFY_TOPIC = process.env.NTFY_TOPIC || 'OSIRIS';
@@ -1296,6 +1297,7 @@ class RunbookEngine {
 
 const runbookEngine = new RunbookEngine();
 const postmortemGenerator = new PostmortemGenerator();
+const selfHealingEngine = new SelfHealingEngine();
 
 async function recordError(errorData) {
   const correlationId = generateCorrelationId();
@@ -1368,6 +1370,14 @@ async function recordError(errorData) {
     const confidence = calculateFixConfidence(matchingFix.pattern);
     const route = routeFix(severity, confidence);
     await logFixRouting(matchingFix.pattern, severity, confidence, route);
+    // Attempt self-healing for low confidence or unknown errors
+    if (route === 'ESCALATE' || !matchingFix) {
+      const healed = await selfHealingEngine.monitorAndHeal(error);
+      if (healed && healed.success) {
+        await sendNtfy('🔄 Self-healing successful', `Pattern: ${matchingFix?.pattern || 'unknown'} | Action: ${healing.healingId}`, 'high');
+        return; // Self-healing handled it
+      }
+    }
 
     if (route === 'ESCALATE') {
       await sendNtfy(`⚠️ Low confidence (${(confidence*100).toFixed(0)}%) for ${matchingFix.pattern}`, 'Requires human investigation — escalating', 'high');
