@@ -128,7 +128,7 @@ const server = http.createServer(async (req, res) => {
       errorCount: errorBuffer.length,
       pendingApprovalsCount: Object.keys(pendingApprovals).length,
       security: HMAC_SECRET ? 'verified' : 'unverified',
-      killSwitchEnabled: fs.existsSync(path.join(__dirname, '..', 'NO_AUTO_FIX'))
+      killSwitchEnabled: getKillSwitchMode()
     }));
     return;
   }
@@ -298,8 +298,15 @@ async function recordError(errorData) {
   }
   
   const matchingFix = knownFixes.find(f => matchesPattern(error, f.pattern));
-  
-  if (matchingFix && !fs.existsSync(path.join(__dirname, '..', 'NO_AUTO_FIX'))) {
+  const mode = getKillSwitchMode();
+
+  // PAUSE_WORKER blocks everything
+  if (mode === 'PAUSE_WORKER') return;
+
+  // PAUSE_CRITICAL blocks SEV1-2 fixes only
+  if (mode === 'PAUSE_CRITICAL' && severity <= 2) return;
+
+  if (matchingFix && mode !== 'NO_AUTO_FIX') {
     // Check blast radius limits before attempting fix
     const blastCheck = checkBlastRadius(matchingFix.pattern);
     if (!blastCheck.allowed) {
@@ -311,6 +318,33 @@ async function recordError(errorData) {
       await sendNtfy(`⚡ Circuit breaker OPEN: ${matchingFix.pattern}`, 'Fix blocked — try again after 30min recovery', 'high');
       return;
     }
+
+    // --- Confidence-based routing ---
+    const confidence = calculateFixConfidence(matchingFix.pattern);
+    const route = routeFix(severity, confidence);
+    await logFixRouting(matchingFix.pattern, severity, confidence, route);
+
+    if (route === 'ESCALATE') {
+      await sendNtfy(`⚠️ Low confidence (${(confidence*100).toFixed(0)}%) for ${matchingFix.pattern}`, 'Requires human investigation — escalating', 'high');
+      return;
+    }
+    if (route === 'HITL_PR') {
+      await createApprovalPR(error, matchingFix, confidence);
+      return;
+    }
+    if (route === 'QUEUE') {
+      const id = generateId();
+      pendingApprovals[id] = { error, fix: matchingFix, queuedAt: new Date().toISOString() };
+      await sendNtfy(
+        `🔧 Fix queued (SEV${severity}, ${(confidence*100).toFixed(0)}% conf)`,
+        `Fix: ${matchingFix.description}\nError: ${error.message}\n\nApprove: http://osiris-ten-jade.vercel.app/approve/${id}\n(Expires in 24h)`,
+        'default'
+      );
+      return;
+    }
+    // route === 'AUTO_FIX' continues to apply fix
+    // --- End confidence routing ---
+
     if (severity >= 4) {
       // Critical path — check rate limiter
       const rl = checkRateLimit(matchingFix.pattern);
