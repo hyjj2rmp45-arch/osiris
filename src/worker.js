@@ -395,6 +395,19 @@ server.listen(HTTP_PORT, '0.0.0.0', () => {
 
 // ── Initialize ─────────────────────────────────────────────
 
+// Kill switch paths (module scope for use in HTTP handler)
+const NO_AUTO_FIX_PATH = path.join(__dirname, '..', 'NO_AUTO_FIX');
+const PAUSE_CRITICAL_PATH = path.join(__dirname, '..', 'PAUSE_CRITICAL');
+const PAUSE_WORKER_PATH = path.join(__dirname, '..', 'PAUSE_WORKER');
+
+// Get current kill switch mode
+function getKillSwitchMode() {
+  if (fs.existsSync(PAUSE_WORKER_PATH)) return 'PAUSE_WORKER';
+  if (fs.existsSync(NO_AUTO_FIX_PATH)) return 'NO_AUTO_FIX';
+  if (fs.existsSync(PAUSE_CRITICAL_PATH)) return 'PAUSE_CRITICAL';
+  return null;
+}
+
 async function initialize() {
   // Load errors
   try {
@@ -436,23 +449,9 @@ async function initialize() {
   }
   
   // Check kill switch
-  // Kill switch paths
-const NO_AUTO_FIX_PATH = path.join(__dirname, '..', 'NO_AUTO_FIX');
-const PAUSE_CRITICAL_PATH = path.join(__dirname, '..', 'PAUSE_CRITICAL');
-const PAUSE_WORKER_PATH = path.join(__dirname, '..', 'PAUSE_WORKER');
-
-// Get current kill switch mode
-function getKillSwitchMode() {
-  if (fs.existsSync(PAUSE_WORKER_PATH)) return 'PAUSE_WORKER';
-  if (fs.existsSync(NO_AUTO_FIX_PATH)) return 'NO_AUTO_FIX';
-  if (fs.existsSync(PAUSE_CRITICAL_PATH)) return 'PAUSE_CRITICAL';
-  return null;
-}
-
-let killSwitchMode = null;
-  if (fs.existsSync(killSwitchPath)) {
+  if (getKillSwitchMode()) {
     console.warn('[worker] ⛔ Kill switch engaged - all auto-fixes disabled');
-    await sendNtfy('⚠️ Kill switch active', 'Remove NO_AUTO_FIX file to re-enable auto-fixes', 'high');
+    await sendNtfy('⚠️ Kill switch active', 'Remove ' + getKillSwitchMode() + ' file to re-enable auto-fixes', 'high');
   }
   
   console.log('[worker] Initialization complete');
@@ -460,111 +459,7 @@ let killSwitchMode = null;
 
 
 
-// ── Distributed Tracing ─────────────────────────────────────────────────
-
-class DistributedTracer {
-  constructor() {
-    this.traces = new Map(); // traceId -> span data
-    this.maxTraces = 1000;
-  }
-
-  startTrace(name, correlationId) {
-    const traceId = `trace_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    const span = {
-      traceId,
-      name,
-      correlationId,
-      startTime: Date.now(),
-      endTime: null,
-      duration: null,
-      status: 'running',
-      parentSpan: null,
-      tags: {}
-    };
-    
-    this.traces.set(traceId, span);
-    this._prune();
-    
-    return traceId;
-  }
-
-  endTrace(traceId, status = 'ok') {
-    const span = this.traces.get(traceId);
-    if (!span) return null;
-    
-    span.endTime = Date.now();
-    span.duration = span.endTime - span.startTime;
-    span.status = status;
-    
-    return span;
-  }
-
-  addTag(traceId, key, value) {
-    const span = this.traces.get(traceId);
-    if (span) span.tags[key] = value;
-  }
-
-  getTrace(traceId) {
-    return this.traces.get(traceId) || null;
-  }
-
-  getActiveTraces() {
-    return Array.from(this.traces.values()).filter(t => t.status === 'running');
-  }
-
-  _prune() {
-    if (this.traces.size > this.maxTraces) {
-      const oldest = Array.from(this.traces.entries())
-        .sort((a, b) => a[1].startTime - b[1].startTime)
-        .slice(0, 100);
-      oldest.forEach(([id]) => this.traces.delete(id));
-    }
-  }
-
-  getStats() {
-    const spans = Array.from(this.traces.values());
-    const completed = spans.filter(s => s.status !== 'running');
-    const avgDuration = completed.length 
-      ? completed.reduce((s, span) => s + (span.duration || 0), 0) / completed.length 
-      : 0;
-    
-    return {
-      total: spans.length,
-      active: spans.filter(s => s.status === 'running').length,
-      completed: completed.length,
-      avgDuration: avgDuration.toFixed(1) + 'ms',
-      byStatus: spans.reduce((acc, s) => {
-        acc[s.status] = (acc[s.status] || 0) + 1;
-        return acc;
-      }, {})
-    };
-  }
-}
-
-const tracer = new DistributedTracer();
-
-// Traces endpoint
-if (pathname === '/traces' && method === 'GET') {
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({
-    stats: tracer.getStats(),
-    active: tracer.getActiveTraces().slice(0, 10)
-  }, null, 2));
-  return;
-}
-
-if (pathname === '/traces/' && method === 'GET') {
-  const traceId = urlObj.searchParams.get('id');
-  if (traceId) {
-    const trace = tracer.getTrace(traceId);
-    res.writeHead(trace ? 200 : 404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(trace || { error: 'Trace not found' }));
-  } else {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Missing trace ID' }));
-  }
-  return;
-}
+// DistributedTracer moved before HTTP server
 
 // ── Sidecar Healing Process ─────────────────────────────────────────────────
 
@@ -647,11 +542,6 @@ class SidecarHealer {
 const sidecar = new SidecarHealer();
 
 // Sidecar status endpoint
-if (pathname === '/sidecar/status' && method === 'GET') {
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(sidecar.getStatus()));
-  return;
-}
 
 
 // ── Error Budget Tracking ─────────────────────────────────────────────────
@@ -844,15 +734,6 @@ class GoldenSignals {
 }
 
 const goldenSignals = new GoldenSignals();
-
-// Metrics endpoint
-if (pathname === '/metrics' && method === 'GET') {
-  goldenSignals.updateSaturation();
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(goldenSignals.getSummary(), null, 2));
-  return;
-}
-
 
 // ── Structured Logging with Correlation IDs ─────────────────────────────────────────────────
 
