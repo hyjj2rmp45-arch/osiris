@@ -28,6 +28,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { APIGateway } = require('./gateway');
 const { ProductionReadiness } = require('./readiness');
 const { SecurityHardening } = require('./security-hardening');
 const { DisasterRecoveryBackup } = require('./backup');
@@ -1320,6 +1321,7 @@ const complianceEngine = new ComplianceEngine();
 const drBackup = new DisasterRecoveryBackup();
 const securityHardening = new SecurityHardening();
 const readiness = new ProductionReadiness();
+const apiGateway = new APIGateway();
 
 async function recordError(errorData) {
   const correlationId = generateCorrelationId();
