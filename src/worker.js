@@ -28,6 +28,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { DependencyUpdateChecker } = require('./dependency-updates');
 const { APIGateway } = require('./gateway');
 const { ProductionReadiness } = require('./readiness');
 const { SecurityHardening } = require('./security-hardening');
@@ -1322,6 +1323,7 @@ const drBackup = new DisasterRecoveryBackup();
 const securityHardening = new SecurityHardening();
 const readiness = new ProductionReadiness();
 const apiGateway = new APIGateway();
+const dependencyChecker = new DependencyUpdateChecker();
 
 async function recordError(errorData) {
   const correlationId = generateCorrelationId();
@@ -1993,6 +1995,9 @@ async function main() {
       const now = Date.now();
       if (now - lastErrorFlush > ERROR_FLUSH_INTERVAL_MS) await flushErrors();
       await processWeeklyBatch();
+      if (dependencyChecker.shouldCheck()) {
+        dependencyChecker.markChecked();
+      }
       await runReconciliationLoop();
       resetSLOIfNeeded();
       await checkErrorBudget();
