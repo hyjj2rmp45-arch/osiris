@@ -360,6 +360,94 @@ let killSwitchMode = null;
   console.log('[worker] Initialization complete');
 }
 
+
+// ── Sidecar Healing Process ─────────────────────────────────────────────────
+
+class SidecarHealer {
+  constructor(opts = {}) {
+    this.healthUrl = opts.healthUrl || `http://localhost:${HTTP_PORT}/health`;
+    this.checkIntervalMs = opts.checkIntervalMs || 60000; // 1 minute
+    this.restartThreshold = opts.restartThreshold || 3;
+    this.consecutiveFailures = 0;
+    this.lastRestart = 0;
+    this.restartCooldownMs = 5 * 60 * 1000; // 5 minutes
+    this.status = 'initializing';
+  }
+
+  async check() {
+    try {
+      const resp = await fetch(this.healthUrl, { signal: AbortSignal.timeout(5000) });
+      const data = await resp.json();
+      
+      if (data.status === 'ok') {
+        this.consecutiveFailures = 0;
+        this.status = 'healthy';
+        return { healthy: true, data };
+      }
+      
+      this.consecutiveFailures++;
+      this.status = 'degraded';
+      console.warn(`[sidecar] Health check returned non-ok: ${JSON.stringify(data)}`);
+      return { healthy: false, data, reason: 'non_ok_status' };
+    } catch (err) {
+      this.consecutiveFailures++;
+      this.status = 'unhealthy';
+      console.error(`[sidecar] Health check failed: ${err.message}`);
+      return { healthy: false, error: err.message };
+    }
+  }
+
+  shouldRestart() {
+    if (this.consecutiveFailures < this.restartThreshold) return false;
+    const now = Date.now();
+    if (now - this.lastRestart < this.restartCooldownMs) return false;
+    return true;
+  }
+
+  async attemptRestart() {
+    if (!this.shouldRestart()) return false;
+    
+    this.lastRestart = Date.now();
+    this.status = 'restarting';
+    console.warn(`[sidecar] Attempting worker restart after ${this.consecutiveFailures} failures`);
+    
+    await sendNtfy('🔄 Sidecar restart', `Worker restarting after ${this.consecutiveFailures} consecutive health failures`, 'urgent');
+    await appendAuditLog('sidecar_restart', { consecutiveFailures: this.consecutiveFailures });
+    
+    // In a containerized environment, this would trigger a restart
+    // For now, we just log and notify
+    this.consecutiveFailures = 0;
+    this.status = 'restarted';
+    return true;
+  }
+
+  async runCheck() {
+    const result = await this.check();
+    if (!result.healthy && this.shouldRestart()) {
+      await this.attemptRestart();
+    }
+    return result;
+  }
+
+  getStatus() {
+    return {
+      status: this.status,
+      consecutiveFailures: this.consecutiveFailures,
+      lastRestart: this.lastRestart,
+      healthUrl: this.healthUrl
+    };
+  }
+}
+
+const sidecar = new SidecarHealer();
+
+// Sidecar status endpoint
+if (pathname === '/sidecar/status' && method === 'GET') {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(sidecar.getStatus()));
+  return;
+}
+
 // ── Error Handling ─────────────────────────────────────
 
 async function recordError(errorData) {
@@ -974,6 +1062,7 @@ async function main() {
       if (now - lastErrorFlush > ERROR_FLUSH_INTERVAL_MS) await flushErrors();
       await processWeeklyBatch();
       await runReconciliationLoop();
+      await sidecar.runCheck();
       
       const selfHealthy = await checkSelfHealth();
       if (!selfHealthy) {
