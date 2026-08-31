@@ -1391,6 +1391,69 @@ class CredentialStoragePolicy {
 
 const credentialStoragePolicy = new CredentialStoragePolicy();
 
+
+// ── Self-Improvement: Fix Outcome Learning ─────────────────────
+const FIX_OUTCOME_WINDOW_MS = 24 * 60 * 60 * 1000;
+const FIX_CONFIDENCE_DECAY_DAYS = 90;
+const MIN_CONFIDENCE = 0.05;
+const MAX_CONFIDENCE = 1.0;
+
+const fixOutcomeHistory = [];
+const fixOutcomeIndex = new Map();
+
+function classifyFixOutcome(error, fix) {
+  if (!fix || !fix.id) return 'unknown';
+  const key = fix.id;
+  const entry = fixOutcomeIndex.get(key) || { successes: 0, failures: 0, lastSeen: 0 };
+  entry.lastSeen = Date.now();
+  fixOutcomeIndex.set(key, entry);
+  return key;
+}
+
+async function recordFixOutcome(fixId, success, errorSource) {
+  const key = fixId;
+  const entry = fixOutcomeIndex.get(key) || { successes: 0, failures: 0, lastSeen: Date.now(), sourceCounts: {} };
+  if (success) entry.successes += 1; else entry.failures += 1;
+  entry.lastSeen = Date.now();
+  entry.sourceCounts[errorSource] = (entry.sourceCounts[errorSource] || 0) + 1;
+  fixOutcomeIndex.set(key, entry);
+
+  fixOutcomeHistory.push({ fixId, success, source: errorSource, timestamp: Date.now() });
+  if (fixOutcomeHistory.length > 5000) fixOutcomeHistory.shift();
+}
+
+function computeFixConfidence(fixId) {
+  const entry = fixOutcomeIndex.get(fixId);
+  if (!entry) return 0.5;
+  const total = entry.successes + entry.failures;
+  if (total === 0) return 0.5;
+  const base = entry.successes / total;
+  const ageDays = (Date.now() - entry.lastSeen) / (24 * 60 * 60 * 1000);
+  const decay = Math.max(0, 1 - ageDays / FIX_CONFIDENCE_DECAY_DAYS);
+  return Math.min(MAX_CONFIDENCE, Math.max(MIN_CONFIDENCE, base * (0.5 + 0.5 * decay)));
+}
+
+function pruneStaleFixOutcomes() {
+  const cutoff = Date.now() - FIX_OUTCOME_WINDOW_MS;
+  for (const [key, entry] of fixOutcomeIndex) {
+    if (entry.lastSeen < cutoff) fixOutcomeIndex.delete(key);
+  }
+}
+
+async function updateKnownFixConfidence() {
+  for (const [key, entry] of fixOutcomeIndex) {
+    const confidence = computeFixConfidence(key);
+    for (const pattern of Object.keys(KNOWN_FIXES || {})) {
+      const fix = KNOWN_FIXES[pattern];
+      if (fix && fix.id === key) {
+        fix.confidence = Number(confidence.toFixed(3));
+        fix.lastConfidenceUpdate = new Date().toISOString();
+      }
+    }
+  }
+}
+
+
 async function recordError(errorData) {
   const correlationId = generateCorrelationId();
   const traceId = tracer.startTrace('recordError', correlationId);
@@ -2070,6 +2133,8 @@ async function main() {
       resetSLOIfNeeded();
       await checkErrorBudget();
       await processQueueBacklog();
+    pruneStaleFixOutcomes();
+    await updateKnownFixConfidence();
       await sidecar.runCheck();
       
       const selfHealthy = await checkSelfHealth();
