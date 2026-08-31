@@ -975,6 +975,30 @@ class ErrorFingerprinter {
 
 const errorFingerprinter = new ErrorFingerprinter();
 
+// GitOps Auto-Remediation
+class GitOpsRemediation {
+  constructor() {
+    this.repoPath = process.cwd();
+    this.enabled = true;
+  }
+  _sh(cmd) {
+    try { return execSync(cmd, { cwd: this.repoPath, timeout: 10000 }).toString(); }
+    catch { return null; }
+  }
+  async commitFix(error, fix, result) {
+    if (!this.enabled) return null;
+    try {
+      const ts = Date.now();
+      const msg = 'auto-fix: ' + fix.description + ' | ' + (result.success ? 'ok' : 'failed');
+      this._sh('git add -A');
+      this._sh('git commit -m ' + JSON.stringify(msg));
+      if (result.success) this._sh('git tag -a fix-' + ts + ' -m ' + JSON.stringify(fix.description));
+      return { committed: true };
+    } catch { return null; }
+  }
+}
+const gitOps = new GitOpsRemediation();
+
 // ── Error Handling ─────────────────────────────────────
 
 async function recordError(errorData) {
@@ -1221,6 +1245,7 @@ async function applyFixSecure(error, fix) {
     return { success: false, error: err.message };
   }
   tracer.endTrace(traceId, result.success ? 'ok' : 'error');
+  await gitOps.commitFix(error, fix, result);
 }
 
 async function createBackup(backupPath) {
