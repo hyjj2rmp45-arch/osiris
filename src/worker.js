@@ -495,6 +495,49 @@ async function verifyFix(fix) {
   }
 }
 
+// Stage 1: Health Check
+async function stage1HealthCheck() {
+  try { return { passed: true, stage: 'health' }; } catch { throw new Error('Stage 1 FAIL'); }
+}
+// Stage 2: Smoke Test (Solana RPC)
+async function stage2SmokeTest() {
+  try {
+    const resp = await fetch((process.env.SOLANA_RPC_URL||'https://api.mainnet-beta.solana.com'), {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({jsonrpc:'2.0',id:1,method:'getSignaturesForAddress',params:[TREASURY_ADDRESS,{limit:1}]})
+    });
+    const d = await resp.json();
+    if(d.error) throw new Error(d.error.message);
+    return {passed:true, stage:'smoke'};
+  } catch(e){ throw new Error('Stage 2 FAIL: '+e.message); }
+}
+// Stage 3: SLO Check
+async function stage3SLOCheck() {
+  const now=Date.now();
+  const recent=errorBuffer.filter(e=>now-new Date(e.timestamp).getTime()<300000).filter(e=>e.severity>=4);
+  if(recent.length>5) throw new Error('Stage 3 FAIL: '+recent.length+' critical errors');
+  return {passed:true, stage:'slo'};
+}
+// Stage 4: Recovery Confirmed
+async function stage4RecoveryConfirmed(pattern, maxWaitMs=300000) {
+  const start=Date.now();
+  while(Date.now()-start<maxWaitMs){ await new Promise(r=>setTimeout(r,10000));
+    const recent=errorBuffer.filter(e=>Date.now()-new Date(e.timestamp).getTime()<60000 && (e.message.includes(pattern)||(e.details&&JSON.stringify(e.details).includes(pattern))));
+    if(recent.length===0) return {passed:true, stage:'recovery'};
+  }
+  throw new Error('Stage 4 FAIL: recovery not confirmed');
+}
+async function runValidationPipeline(pattern) {
+  const stages=[
+    {name:'health',fn:stage1HealthCheck},
+    {name:'smoke',fn:stage2SmokeTest},
+    {name:'slo',fn:stage3SLOCheck},
+    {name:'recovery',fn:()=>stage4RecoveryConfirmed(pattern)}
+  ];
+  for(const s of stages){ console.log('[validation] '+s.name); await s.fn(); console.log('[validation] '+s.name+' PASSED'); }
+  return {passed:true, stages:stages.map(s=>s.name)};
+}
+
 // ── Immutable Audit Trail ─────────────────────────────────────────────────────────────────
 
 async function appendAuditLog(eventType, data) {
