@@ -28,6 +28,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { AuditExporter } = require('./audit-export');
 const { DNSFailover } = require('./dns-failover');
 const { TLSCertificateRotator } = require('./tls-rotation');
 const { ChaosEngine } = require('./chaos');
