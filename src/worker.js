@@ -28,6 +28,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { DisasterRecoveryBackup } = require('./backup');
 const { ComplianceEngine } = require('./compliance');
 const { AuditExporter } = require('./audit-export');
 const { DNSFailover } = require('./dns-failover');
