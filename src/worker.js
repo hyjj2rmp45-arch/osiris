@@ -1007,18 +1007,22 @@ class GitOpsRemediation {
     this.repoPath = process.cwd();
     this.enabled = true;
   }
+  _sanitize(input) {
+    return String(input).replace(/[^a-zA-Z0-9_\- .:\/]/g, '').slice(0, 200);
+  }
   _sh(cmd) {
-    try { return execSync(cmd, { cwd: this.repoPath, timeout: 10000 }).toString(); }
+    try { return execSync(cmd, { cwd: this.repoPath, timeout: 10000, shell: 'cmd.exe' }).toString(); }
     catch { return null; }
   }
   async commitFix(error, fix, result) {
     if (!this.enabled) return null;
     try {
       const ts = Date.now();
-      const msg = 'auto-fix: ' + fix.description + ' | ' + (result.success ? 'ok' : 'failed');
+      const safeDesc = this._sanitize(fix.description || 'fix');
+      const msg = 'auto-fix: ' + safeDesc + ' | ' + (result.success ? 'ok' : 'failed');
       this._sh('git add -A');
       this._sh('git commit -m ' + JSON.stringify(msg));
-      if (result.success) this._sh('git tag -a fix-' + ts + ' -m ' + JSON.stringify(fix.description));
+      if (result.success) this._sh('git tag -a fix-' + ts + ' -m ' + JSON.stringify(safeDesc));
       return { committed: true };
     } catch { return null; }
   }
