@@ -254,7 +254,20 @@ async function initialize() {
   }
   
   // Check kill switch
-  const killSwitchPath = path.join(__dirname, '..', 'NO_AUTO_FIX');
+  // Kill switch paths
+const NO_AUTO_FIX_PATH = path.join(__dirname, '..', 'NO_AUTO_FIX');
+const PAUSE_CRITICAL_PATH = path.join(__dirname, '..', 'PAUSE_CRITICAL');
+const PAUSE_WORKER_PATH = path.join(__dirname, '..', 'PAUSE_WORKER');
+
+// Get current kill switch mode
+function getKillSwitchMode() {
+  if (fs.existsSync(PAUSE_WORKER_PATH)) return 'PAUSE_WORKER';
+  if (fs.existsSync(NO_AUTO_FIX_PATH)) return 'NO_AUTO_FIX';
+  if (fs.existsSync(PAUSE_CRITICAL_PATH)) return 'PAUSE_CRITICAL';
+  return null;
+}
+
+let killSwitchMode = null;
   if (fs.existsSync(killSwitchPath)) {
     console.warn('[worker] ⛔ Kill switch engaged - all auto-fixes disabled');
     await sendNtfy('⚠️ Kill switch active', 'Remove NO_AUTO_FIX file to re-enable auto-fixes', 'high');
