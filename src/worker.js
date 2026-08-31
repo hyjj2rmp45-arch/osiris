@@ -338,20 +338,33 @@ async function recordError(errorData) {
       );
     } else {
       // Severity 3 - auto-apply
+      // Check blast radius and circuit breaker before applying fix
+      const blastCheck3 = checkBlastRadius(matchingFix.pattern);
+      if (!blastCheck3.allowed) {
+        await sendNtfy(`⏳ Blast radius: ${blastCheck3.reason}`, `Pattern: ${matchingFix.pattern}`, 'high');
+        return;
+      }
+      if (!fixCircuitBreaker.canAttempt(matchingFix.pattern)) {
+        await sendNtfy(`⚡ Circuit breaker OPEN: ${matchingFix.pattern}`, 'Fix blocked — try again after 30min recovery', 'high');
+        return;
+      }
       const result = await applyFixSecure(error, matchingFix);
-            if (result.success) {
-              // Record success: circuit breaker reset + blast radius tracking
-              fixCircuitBreaker.onSuccess(matchingFix.pattern);
-              recordFixApplication(matchingFix.pattern);
-              await sendNtfy(`✅ SEV${severity} auto-fixed`, `Fix: ${matchingFix.description}`, 'high');
-            } else {
-              // Record failure: circuit breaker increment
-              fixCircuitBreaker.onFailure(matchingFix.pattern);
-              await sendNtfy(`❌ SEV${severity} auto-fix failed`, `Fix: ${matchingFix.description}\\nError: ${result.error}`, 'urgent');
-            }
+      if (result.success) {
+        // Record success: circuit breaker reset + blast radius tracking
+        fixCircuitBreaker.onSuccess(matchingFix.pattern);
+        recordFixApplication(matchingFix.pattern);
+        await sendNtfy(`✅ SEV${severity} auto-fixed`, `Fix: ${matchingFix.description}`, 'high');
+      } else {
+        // Record failure: circuit breaker increment
+        fixCircuitBreaker.onFailure(matchingFix.pattern);
+        await sendNtfy(`❌ SEV${severity} auto-fix failed`, `Fix: ${matchingFix.description}\nError: ${result.error}`, 'urgent');
+      }
       await appendAuditLog('auto_fix_applied_sev3', {
-        errorId: error.id, pattern: matchingFix.pattern, description: matchingFix.description,
-        success: result.success, error: result.error || null
+        errorId: error.id,
+        pattern: matchingFix.pattern,
+        description: matchingFix.description,
+        success: result.success,
+        error: result.error || null
       });
     }
   } else if (severity >= 4) {
