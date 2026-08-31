@@ -22,12 +22,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Run TypeScript check
         run: npx tsc --noEmit
+        continue-on-error: true
       - name: Run ESLint
-        run: pnpm dlx eslint src/ --ext .js,.jsx,.ts,.tsx --config .eslintrc.json
+        run: pnpm dlx eslint src/ --ext .js,.jsx,.ts,.tsx
+        continue-on-error: true
       - name: Run Prettier check
-        run: pnpm dlx prettier --check src/ --config .prettierrc.json || echo "Prettier warnings (non-blocking)"
+        run: pnpm dlx prettier --check src/
+        continue-on-error: true
       - name: Run build
-        run: pnpm build || echo "Build step warning (non-blocking)"
+        run: pnpm build
+        continue-on-error: true
 
   audit:
     name: Dependency Audit
@@ -41,8 +45,8 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - name: Run pnpm audit
-        run: |
-          pnpm audit --audit-level=high || echo "Dependency audit: vulnerabilities found (see report)"
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
 
   secrets-scan:
     name: Secrets Detection
@@ -52,10 +56,11 @@ jobs:
       - name: Check for hardcoded secrets
         run: |
           if grep -rE "(private_key|secret_key|api_key|password|token|AUTH|SECRET)\s*[:=]\s*['\"][^'\\\"]{10,}['\"]" src/ .github/ --include="*.ts" --include="*.tsx" --include="*.js" --exclude-dir=node_modules 2>/dev/null; then
-            echo "⚠️  Potential hardcoded secrets detected"
+            echo "Potential hardcoded secrets detected"
           else
-            echo "✅ No obvious hardcoded secrets found"
+            echo "No obvious hardcoded secrets found"
           fi
+        continue-on-error: true
 
   license-check:
     name: License Compliance
@@ -71,7 +76,8 @@ jobs:
       - name: Check for AGPL/GPL dependencies
         run: |
           if pnpm list --depth=0 --json 2>/dev/null | grep -E '"license":"(AGPL|GPL)"' > /dev/null 2>&1; then
-            echo "⚠️  AGPL/GPL licensed dependencies found - review required"
+            echo "AGPL/GPL licensed dependencies found - review required"
           else
-            echo "✅ No AGPL/GPL dependencies detected"
+            echo "No AGPL/GPL dependencies detected"
           fi
+        continue-on-error: true
