@@ -999,6 +999,54 @@ class GitOpsRemediation {
 }
 const gitOps = new GitOpsRemediation();
 
+// Queue Backlog Auto-Drain
+const QUEUE_DRAIN_INTERVAL_MS = 5 * 60 * 1000;
+const QUEUE_APPROVAL_EXPIRY_MS = 24 * 60 * 60 * 1000;
+let lastQueueDrain = 0;
+
+async function processQueueBacklog() {
+  const now = Date.now();
+  if (now - lastQueueDrain < QUEUE_DRAIN_INTERVAL_MS) return;
+  lastQueueDrain = now;
+
+  const ids = Object.keys(pendingApprovals);
+  if (ids.length === 0) return;
+
+  let drained = 0, expired = 0, escalated = 0;
+  const entries = ids.map(id => ({ id, ...pendingApprovals[id] })).sort((a, b) => new Date(a.queuedAt) - new Date(b.queuedAt));
+
+  for (const entry of entries) {
+    const ageMs = now - new Date(entry.queuedAt).getTime();
+    const confidence = calculateFixConfidence(entry.fix.pattern);
+    const route = routeFix(entry.error.severity, confidence);
+
+    if (ageMs > QUEUE_APPROVAL_EXPIRY_MS) {
+      delete pendingApprovals[entry.id];
+      expired++;
+      await appendAuditLog('queue_expired', { id: entry.id, ageMs });
+      continue;
+    }
+    if (route === 'AUTO_FIX' && ageMs > 10 * 60 * 1000) {
+      const result = await applyFixSecure(entry.error, entry.fix);
+      if (result.success) await sendNtfy('✅ Auto-drained queued fix', `Pattern: ${entry.fix.pattern}`, 'high');
+      delete pendingApprovals[entry.id];
+      drained++;
+      continue;
+    }
+    if (route === 'ESCALATE' && ageMs > 30 * 60 * 1000) {
+      await sendNtfy('⚠️ Queued fix escalated', `Pattern: ${entry.fix.pattern} aged 30m`, 'high');
+      delete pendingApprovals[entry.id];
+      escalated++;
+      continue;
+    }
+  }
+
+  if (drained + expired + escalated > 0) {
+    console.log(`[queue] Drain: ${drained} applied, ${expired} expired, ${escalated} escalated`);
+    await sendNtfy('📋 Queue backlog processed', `${drained} drained, ${expired} expired, ${escalated} escalated`, 'default');
+  }
+}
+
 // ── Error Handling ─────────────────────────────────────
 
 async function recordError(errorData) {
@@ -1643,6 +1691,7 @@ async function main() {
       await runReconciliationLoop();
       resetSLOIfNeeded();
       await checkErrorBudget();
+      await processQueueBacklog();
       await sidecar.runCheck();
       
       const selfHealthy = await checkSelfHealth();
