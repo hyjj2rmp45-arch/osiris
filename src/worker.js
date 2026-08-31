@@ -475,8 +475,11 @@ async function applyFixSecure(error, fix) {
     // Apply the fix
     await executeFix(fix, error);
     
-    // Verify the fix didn't break anything by restarting the component
-    await verifyFix(fix);
+    // Run 4-stage validation pipeline
+    const validation = await runValidationPipeline(fix.pattern || error.message);
+    if (!validation.passed) {
+      throw new Error(`Validation failed: ${validation.failedStage || 'unknown'}`);
+    }
     
     return { success: true };
   } catch (err) {
@@ -610,7 +613,16 @@ async function runValidationPipeline(pattern) {
     {name:'slo',fn:stage3SLOCheck},
     {name:'recovery',fn:()=>stage4RecoveryConfirmed(pattern)}
   ];
-  for(const s of stages){ console.log('[validation] '+s.name); await s.fn(); console.log('[validation] '+s.name+' PASSED'); }
+  for(const s of stages){ 
+    console.log('[validation] '+s.name); 
+    try {
+      await s.fn(); 
+      console.log('[validation] '+s.name+' PASSED'); 
+    } catch (err) {
+      console.error('[validation] '+s.name+' FAILED:', err.message);
+      throw Object.assign(err, { failedStage: s.name });
+    }
+  }
   return {passed:true, stages:stages.map(s=>s.name)};
 }
 
