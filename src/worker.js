@@ -1501,11 +1501,16 @@ async function recordError(errorData) {
           return;
         }
 
-        // School mode: Only critical fixes (SEV4+) allowed, rest queued
+        // School mode: Tier-based handling for non-critical fixes (SEV1-3)
+        // Only SEV4+ gets auto-applied — lower severities get queued with Q-link
         if (currentMode === 'SCHOOL' && severity < 4) {
+          const id = generateId();
+          pendingApprovals[id] = { error, fix: matchingFix, queuedAt: new Date().toISOString() };
+          
+          const severityLabel = severity <= 1 ? 'L1' : severity === 2 ? 'L2' : 'L3';
           await sendNtfy(
-            `⏸️ Non-critical fix queued - School mode`,
-            `Fix: ${matchingFix.description}\nSeverity: ${severity} (< 4)\nQueued until after school hours (after 3:15 PM)`,
+            `⏸️ ${severityLabel} fix Q'd - School mode`,
+            `Fix: ${matchingFix.description}\nSeverity: ${severity} (< 4)\nApprove while in class: http://osiris-ten-jade.vercel.app/approve/${id}`,
             'default'
           );
           await appendAuditLog('fix_queued_school_mode', {

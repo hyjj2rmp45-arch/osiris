@@ -6,7 +6,7 @@
  * Schedule:
  * 🌙 NIGHT: 3:00 AM - 6:00 AM → Minimal activity, critical alerts only
  * 📋 RECAP: 6:00 AM - 7:00 AM → Morning summary, review overnight activity
- * 🎒 SCHOOL: 7:00 AM - 3:15 PM weekdays → Critical auto-fix enabled, payment fixes blocked
+ * 🎒 SCHOOL: 7:00 AM - 3:15 PM weekdays → Critical fixes (SEV4+) auto-apply, L1-3 queued with Q-link, payment fixes BLOCKED
  * ✅ ACTIVE: All other times → Full auto-fix capabilities
  * 🛑 EMERGENCY: Manual activation → All auto-fix disabled
  * 
@@ -111,13 +111,13 @@ const MODES = {
   
   SCHOOL: {
     name: 'Unattended (School)',
-    description: '7 AM - 3:15 PM weekdays — Critical auto-fix enabled, payment fixes blocked',
+    description: '7 AM - 3:15 PM weekdays — SEV4+ auto-apply, L1-3 queued, payment BLOCKED',
     restrictions: ['no_payment_fixes', 'payment_critical_alerts', 'telegram_notifications'],
-    autoFixEnabled: true,          // ✅ Critical fixes proceed automatically
-    paymentFixAllowed: false,       // ❌ Block payment-related fixes
+    autoFixEnabled: true,          // ✅ Critical (SEV4+) fixes proceed automatically
+    paymentFixAllowed: false,       // ❌ Block payment-related fixes with urgent alert
     notifications: 'immediate',
-    // Only critical severity (SEV4) triggers auto-fix during school
-    onlyCriticalFixes: true
+    // SEV4+ = auto-fix, SEV1-3 = queued with approval link
+    severityTierHandling: 'critical_auto_queue_lower'
   },
   
   WEEKEND: {
