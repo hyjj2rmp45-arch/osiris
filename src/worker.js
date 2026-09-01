@@ -83,7 +83,9 @@ if (!SECURITY_BOT_TOKEN) {
         if (vars.BOT_TOKEN && !SECURITY_BOT_TOKEN) {
           SECURITY_BOT_TOKEN = vars.BOT_TOKEN;
         }
-        if (vars.ALLOWED_CHAT_IDS && !SECURITY_BOT_CHAT_ID) {
+        if (vars.ALLOWED_TELEGRAM_IDS) {
+          SECURITY_BOT_CHAT_ID = vars.ALLOWED_TELEGRAM_IDS.split(',')[0].trim();
+        } else if (vars.ALLOWED_CHAT_IDS && !SECURITY_BOT_CHAT_ID) {
           SECURITY_BOT_CHAT_ID = vars.ALLOWED_CHAT_IDS.split(',')[0];
         }
         if (SECURITY_BOT_TOKEN) { botTokenLoaded = true; }

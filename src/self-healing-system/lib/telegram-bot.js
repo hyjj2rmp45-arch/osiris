@@ -452,10 +452,26 @@ function initialize(botToken, chatId) {
       chatId: chatId
     });
     
-    // Load authorized chat IDs from secure storage
-    const authFile = '/app/data/telegram-authorized-chats.json';
-    const authData = safeReadJSON(authFile, { chats: [chatId], schemaVersion: 1 }, 1);
-    authorizedChatIds = new Set(authData.chats || [chatId]);
+    // Load authorized chat IDs from environment variable or file
+    let authorizedChatIdsList = [chatId]; // Default to configured chatId
+    
+    // Check environment variable first
+    const envAuthChats = process.env.ALLOWED_TELEGRAM_IDS || process.env.ALLOWED_CHAT_IDS;
+    if (envAuthChats) {
+      authorizedChatIdsList = envAuthChats.split(',').map(id => id.trim()).filter(Boolean);
+    } else {
+      // Fallback to file if env var not set
+      try {
+        const authFile = '/app/data/telegram-authorized-chats.json';
+        const authData = safeReadJSON(authFile, { chats: [chatId], schemaVersion: 1 }, 1);
+        authorizedChatIdsList = authData.chats || [chatId];
+      } catch (e) {
+        console.warn('[Telegram] Could not load auth file, using default chatId');
+      }
+    }
+    
+    authorizedChatIds = new Set(authorizedChatIdsList);
+    console.log('[Telegram] Authorized chat IDs:', [...authorizedChatIds]);
     
     return telegramClient;
   } catch (err) {
