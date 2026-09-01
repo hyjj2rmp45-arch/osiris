@@ -85,8 +85,11 @@ if (!SECURITY_BOT_TOKEN) {
         }
         if (vars.ALLOWED_TELEGRAM_IDS) {
           SECURITY_BOT_CHAT_ID = vars.ALLOWED_TELEGRAM_IDS.split(',')[0].trim();
+          // Also set as environment variable so telegram-bot.js module can read it
+          process.env.ALLOWED_TELEGRAM_IDS = vars.ALLOWED_TELEGRAM_IDS;
         } else if (vars.ALLOWED_CHAT_IDS && !SECURITY_BOT_CHAT_ID) {
           SECURITY_BOT_CHAT_ID = vars.ALLOWED_CHAT_IDS.split(',')[0];
+          process.env.ALLOWED_CHAT_IDS = vars.ALLOWED_CHAT_IDS;
         }
         if (SECURITY_BOT_TOKEN) { botTokenLoaded = true; }
       } catch (e) {
