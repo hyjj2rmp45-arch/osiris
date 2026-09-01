@@ -1443,11 +1443,84 @@ async function recordError(errorData) {
         'default'
       );
       return;
-    }
-    // route === 'AUTO_FIX' continues to apply fix
-    // --- End confidence routing ---
+      }
+      // route === 'AUTO_FIX' continues to apply fix
+      // --- End confidence routing ---
 
-    if (severity >= 4) {
+      // ═══════════════════════════════════════════════════════════════
+      // PHASE 1+3: ENHANCED SAFETY GATE (additional safety layers)
+      // The worker's built-in safety checks run first (kill switch, rate limit,
+      // circuit breaker). Now we layer the self-healing system on top.
+      // ═══════════════════════════════════════════════════════════════
+    
+      // Load self-healing system (lazy initialization — only when needed)
+      let selfHealing;
+      try {
+        selfHealing = require('./self-healing-system');
+        if (!selfHealing.initialized) {
+          await selfHealing.initialize({
+            repoRoot: process.cwd(),
+            telegramBotToken: process.env.SECURITY_BOT_TOKEN || process.env.BOT_TOKEN,
+            telegramChatId: process.env.SECURITY_BOT_CHAT_ID || process.env.TELEGRAM_CHAT_ID
+          });
+        }
+      } catch (err) {
+        console.error('[worker] Self-healing system failed to initialize — proceeding with built-in safety only:', err.message);
+      }
+
+      // Run enhanced safety gate if self-healing is available
+      if (selfHealing && selfHealing.initialized) {
+        // Phase 1: Pre-fix safety validation
+        const safetyResult = selfHealing.applySafetyGate(error, matchingFix);
+        if (!safetyResult.allow) {
+          await sendNtfy(
+            `🛡️ Safety gate BLOCKED fix`,
+            `Pattern: ${matchingFix.pattern}\nReason: ${safetyResult.reasons.join(' | ')}\nAction: ${safetyResult.route}`,
+            'urgent'
+          );
+          await appendAuditLog('safety_gate_block', {
+            pattern: matchingFix.pattern,
+            reasons: safetyResult.reasons,
+            route: safetyResult.route
+          });
+          return;
+        }
+      
+        // Phase 1: Mode check — payment fixes blocked during school
+        const currentMode = selfHealing.getCurrentMode();
+        if (currentMode === 'SCHOOL' && selfHealing.isPaymentCode(matchingFix.file)) {
+          await sendNtfy(
+            `💸 Payment fix BLOCKED - School mode`,
+            `Fix: ${matchingFix.description}\nFile: ${matchingFix.file}\nTime: 7AM-3:15PM weekdays, payment fixes require manual approval`,
+            'urgent'
+          );
+          await appendAuditLog('payment_fix_blocked_school_mode', {
+            pattern: matchingFix.pattern,
+            file: matchingFix.file
+          });
+          return;
+        }
+
+        // Phase 3: Record metrics
+        selfHealing.recordFixMetrics(error, matchingFix, safetyResult);
+
+        // Phase 3: Drift detection warning
+        const driftCheck = selfHealing.checkDrift({
+          tokensUsed: matchingFix.tokensUsed || 0,
+          stepsTaken: matchingFix.stepsTaken || 0,
+          confidence: safetyResult.confidence
+        });
+        if (driftCheck.driftDetected) {
+          await sendNtfy(
+            `⚠️ Behavioral drift detected`,
+            `Pattern: ${matchingFix.pattern}\nSeverity: ${driftCheck.severity}\nIssues: ${driftCheck.reasons.join(' | ')}`,
+            'high'
+          );
+        }
+      }
+      // ═══════════════════════════════════════════════════════════════
+
+      if (severity >= 4) {
       // Critical path — check rate limiter
       const rl = checkRateLimit(matchingFix.pattern);
       if (!rl.allowed) {

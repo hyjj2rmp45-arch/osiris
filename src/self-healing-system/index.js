@@ -154,7 +154,9 @@ async function initialize(options = {}) {
  * @returns {{allow: boolean, route: string, reasons: string[], correlationId: string}}
  */
 function safetyGate(fixAttempt, errorInfo) {
-  const correlationId = auditTrail ? auditTrail.uuidv7() : require('crypto').randomUUID();
+const correlationId = (auditTrail && auditTrail.record) 
+    ? auditTrail.record('safety_gate_check', {}) 
+    : require('crypto').randomUUID();
   const reasons = [];
   
   // === GATE 1: Kill Switch Check ===
@@ -541,6 +543,97 @@ function runProductionEval(fixId, errorFingerprint, testResults = {}) {
   return productionEval.runPostFixEval(fixId, errorFingerprint, testResults);
 }
 
+/**
+ * Apply safety gate (wrapper for worker.js integration).
+ * Runs the full Phase 1+ safety pipeline.
+ * 
+ * @param {object} error - Error info { fingerprint, message, severity }
+ * @param {object} fixProposal - { pattern, file, diff, description }
+ * @returns {{allow: boolean, route: string, confidence: number, reasons: string[]}}
+ */
+async function applySafetyGate(error, fixProposal) {
+  if (!initialized) {
+    return { allow: true, route: 'AUTO_FIX', confidence: 0.5, reasons: ['System not initialized, using defaults'] };
+  }
+  
+  // Run Phase 1 safety gate
+  const safetyResult = safetyGate(fixProposal, error);
+  
+  // Record metrics
+  if (metricsCollector) {
+    metricsCollector.recordFixAttempt(error, fixProposal, safetyResult);
+  }
+  
+  return {
+    allow: safetyResult.allow,
+    route: safetyResult.route,
+    confidence: safetyResult.confidence || 0,
+    reasons: safetyResult.reasons,
+    correlationId: safetyResult.correlationId
+  };
+}
+
+/**
+ * Get current mode name for worker integration.
+ */
+function getCurrentMode() {
+  if (!modeManager) return 'ACTIVE';
+  const status = modeManager.getStatus();
+  return status.currentMode;
+}
+
+/**
+ * Check if a file contains payment-related code.
+ */
+function isPaymentCode(filePath) {
+  if (!filePath) return false;
+  
+  const paymentPatterns = [
+    'payment',
+    'subscription',
+    'wallet',
+    'stripe',
+    'solana',
+    'telegram/auth',
+    'webhook'
+  ];
+  
+  const lowerPath = filePath.toLowerCase();
+  return paymentPatterns.some(p => lowerPath.includes(p));
+}
+
+/**
+ * Record fix metrics for Phase 3 observability.
+ */
+function recordFixMetrics(error, fixProposal, safetyResult) {
+  if (!metricsCollector) return;
+  
+  const errorWithFingerprint = {
+    fingerprint: error.fingerprint || error.pattern,
+    severity: error.severity
+  };
+  
+  metricsCollector.recordFixAttempt(errorWithFingerprint, fixProposal, {
+    action: safetyResult.route,
+    confidence: safetyResult.confidence,
+    correlationId: safetyResult.correlationId
+  });
+}
+
+/**
+ * Check for behavioral drift.
+ * 
+ * @param {object} fixMetrics - { tokensUsed, stepsTaken, confidence }
+ * @returns {{driftDetected: boolean, severity: string, reasons: string[], action: string}}
+ */
+function checkDrift(fixMetrics) {
+  if (!driftDetector) {
+    return { driftDetected: false, severity: 'OK', reasons: [], action: 'none' };
+  }
+  
+  return driftDetector.detectDrift(fixMetrics);
+}
+
 // ═══════════════════════════════════════════════════════════════
 // EXPORTS
 // ═══════════════════════════════════════════════════════════════
@@ -558,6 +651,11 @@ module.exports = {
   getMetrics,
   getDriftStatus,
   runProductionEval,
+  applySafetyGate,
+  getCurrentMode,
+  isPaymentCode,
+  recordFixMetrics,
+  checkDrift,
   
   // Component references (for advanced use)
   trustBoundary,
