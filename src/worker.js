@@ -60,28 +60,46 @@ const { PostmortemGenerator } = require('./postmortem');
 let SECURITY_BOT_TOKEN = process.env.SECURITY_BOT_TOKEN;
 let SECURITY_BOT_CHAT_ID = process.env.SECURITY_BOT_CHAT_ID;
 
+// Fallback: try multiple possible locations for bot-token.env
+const possiblePaths = [
+  path.join(__dirname, '..', 'bot-token.env'),        // /app/bot-token.env
+  path.join(__dirname, '..', 'src', 'bot-token.env'), // /app/src/bot-token.env
+  path.join(process.cwd(), 'src', 'bot-token.env'),    // cwd/src/bot-token.env
+];
+
+let botTokenLoaded = false;
+
 if (!SECURITY_BOT_TOKEN) {
-  // Try loading from bot-token.env file
-  const botTokenFile = path.join(__dirname, '..', 'src', 'bot-token.env');
-  if (fs.existsSync(botTokenFile)) {
-    const fileContent = fs.readFileSync(botTokenFile, 'utf8');
-    const vars = {};
-    fileContent.split('\n').forEach(line => {
-      const match = line.match(/^([A-Z_]+)=(.*)$/);
-      if (match) { vars[match[1]] = match[2].trim(); }
-    });
-    if (vars.BOT_TOKEN && !SECURITY_BOT_TOKEN) {
-      // Map BOT_TOKEN to SECURITY_BOT_TOKEN for the guard bot
-      SECURITY_BOT_TOKEN = vars.BOT_TOKEN;
-    }
-    if (vars.ALLOWED_CHAT_IDS && !SECURITY_BOT_CHAT_ID) {
-      // Use first allowed chat ID
-      SECURITY_BOT_CHAT_ID = vars.ALLOWED_CHAT_IDS.split(',')[0];
+  for (const botTokenFile of possiblePaths) {
+    if (fs.existsSync(botTokenFile)) {
+      console.log('[worker] Loading bot token from:', botTokenFile);
+      try {
+        const fileContent = fs.readFileSync(botTokenFile, 'utf8');
+        const vars = {};
+        fileContent.split('\n').forEach(line => {
+          const match = line.match(/^([A-Z_]+)=(.*)$/);
+          if (match) { vars[match[1]] = match[2].trim(); }
+        });
+        if (vars.BOT_TOKEN && !SECURITY_BOT_TOKEN) {
+          SECURITY_BOT_TOKEN = vars.BOT_TOKEN;
+        }
+        if (vars.ALLOWED_CHAT_IDS && !SECURITY_BOT_CHAT_ID) {
+          SECURITY_BOT_CHAT_ID = vars.ALLOWED_CHAT_IDS.split(',')[0];
+        }
+        if (SECURITY_BOT_TOKEN) { botTokenLoaded = true; }
+      } catch (e) {
+        console.warn('[worker] Failed to load bot-token.env:', e.message);
+      }
+      break;
     }
   }
 }
-if (!SECURITY_BOT_CHAT_ID && process.env.ALLOWED_CHAT_IDS) {
-  SECURITY_BOT_CHAT_ID = process.env.ALLOWED_CHAT_IDS.split(',')[0];
+
+if (SECURITY_BOT_TOKEN) {
+  console.log('[worker] Guard bot token loaded successfully');
+  if (!SECURITY_BOT_CHAT_ID) { console.warn('[worker] WARNING: No SECURITY_BOT_CHAT_ID found!'); }
+} else {
+  console.warn('[worker] No guard bot token found (SECURITY_BOT_TOKEN not set)');
 }
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS || 30000);
 const HTTP_PORT = Number(process.env.PORT || process.env.WORKER_HTTP_PORT || 3000);
