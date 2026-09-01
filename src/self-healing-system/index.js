@@ -1,5 +1,5 @@
 /**
- * Self-Healing System - Phase 1 + Phase 2
+ * Self-Healing System - Phase 1 + 2 + 3
  * 
  * Safety Layer Priority:
  * 1. Kill switch check (fastest, cheapest)
@@ -34,6 +34,10 @@ const healthMonitor = require('./lib/health-monitor');
 const { SelfHealingRouter, createRouter } = require('./lib/router');
 const { computeEnhancedConfidence, detectAnomalies } = require('./lib/confidence-scoring');
 
+// Phase 3 Observability Components
+const { MetricsCollector, DriftDetector, ProductionEval } = require('./lib/observability');
+
+
 // ═══════════════════════════════════════════════════════════════
 // INITIALIZATION
 // ═══════════════════════════════════════════════════════════════
@@ -47,6 +51,11 @@ let llmCircuitBreaker = null;
 let githubCircuitBreaker = null;
 let ntfyCircuitBreaker = null;
 let modeManager = null;
+
+// Phase 3 Observability components
+let metricsCollector = null;
+let driftDetector = null;
+let productionEval = null;
 
 async function initialize(options = {}) {
   if (initialized) return;
@@ -83,6 +92,23 @@ async function initialize(options = {}) {
     auditTrail: auditTrail,
     telegramBot: telegramBot,
     stateFile: '/app/data/mode-state.json'
+  });
+  
+  // Initialize Phase 3 Observability components
+  metricsCollector = new MetricsCollector({
+    metricsFile: '/app/data/metrics.json',
+    auditTrail: auditTrail
+  });
+  
+  driftDetector = new DriftDetector({
+    metricsCollector: metricsCollector,
+    auditTrail: auditTrail,
+    driftFile: '/app/data/drift-state.json'
+  });
+  
+  productionEval = new ProductionEval({
+    evalFile: '/app/data/eval-results.json',
+    auditTrail: auditTrail
   });
   
   // Initialize health monitor
@@ -482,6 +508,40 @@ function routeError(error, fixProposal) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// PHASE 3 ACCESSORS
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Get current metrics snapshot.
+ */
+function getMetrics() {
+  if (!metricsCollector) {
+    throw new Error('Observability not initialized. Call initialize() first.');
+  }
+  return metricsCollector.getMetrics();
+}
+
+/**
+ * Get drift detection status.
+ */
+function getDriftStatus() {
+  if (!driftDetector) {
+    return { initialized: false };
+  }
+  return { initialized: true, baseline: driftDetector.baseline };
+}
+
+/**
+ * Run a production evaluation.
+ */
+function runProductionEval(fixId, errorFingerprint, testResults = {}) {
+  if (!productionEval) {
+    throw new Error('Production eval not initialized. Call initialize() first.');
+  }
+  return productionEval.runPostFixEval(fixId, errorFingerprint, testResults);
+}
+
+// ═══════════════════════════════════════════════════════════════
 // EXPORTS
 // ═══════════════════════════════════════════════════════════════
 
@@ -495,6 +555,9 @@ module.exports = {
   routeError,
   computeEnhancedConfidence,
   detectAnomalies,
+  getMetrics,
+  getDriftStatus,
+  runProductionEval,
   
   // Component references (for advanced use)
   trustBoundary,
@@ -508,6 +571,9 @@ module.exports = {
   modeManager,
   MODES,
   healthMonitor,
+  MetricsCollector,
+  DriftDetector,
+  ProductionEval,
   SelfHealingRouter,
   createRouter
 };
