@@ -323,6 +323,93 @@ Claude proposes tool call → {User allow/deny rules?} → Match → Apply rule
 
 ---
 
+## Reliability & Self-Recovery Patterns
+
+### Research: Making the Self-Improvement System Itself Robust
+
+**Key insight**: The agent that fixes things needs to survive its own failures — crashes, OOM, network timeouts, and corrupted state. Industry research (Zylos AI, Cairn/GitHub, Composio) shows self-healing systems need **four reliability pillars**:
+
+#### 1. Heartbeat + Watchdog (Zylos AI Research)
+- **Heartbeat**: Periodic health signal sent to an external monitor — enables preventive intervention BEFORE failures
+- **Watchdog**: Last-resort timeout-based recovery — kills and restarts if no heartbeat received
+- **Production best practice**: Systems use BOTH — heartbeat for observability, watchdog as safety net
+- **For OSIRIS**: Existing ntfy notifications serve as heartbeat; systemd auto-restart serves as watchdog
+
+#### 2. Checkpointing & State Persistence (Cairn/GitHub)
+
+**Critical finding from Cairn research**: "Checkpoints are compactions" — instead of faithful replay of every action, the agent should persist a **compacted continuation state** (what it was doing, what had happened so far) and **re-ground** after restart.
+
+**Key patterns:**
+- **Durable state**: Every critical state change persisted to disk (not just memory)
+- **Effect-safety**: Prevent re-acting on world after recovery (don't re-open a PR, re-send alerts, etc.)
+- **Re-grounding**: After restart, re-establish situational awareness by re-reading the current state rather than replaying history
+- **Idempotency**: Operations designed to be safely repeated
+
+**What OSIRIS should persist to disk:**
+- `EmergencyStop` state (consecutive denials, session denials, rate limit tracker) — ✅ already in implementation plan
+- `pendingApprovals` queue (approval UUIDs, expiry timestamps, associated PR data)
+- `fixOutcomeHistory` index (which fixes succeeded/failed, with hashes)
+- Current in-flight fix operation state (so it can resume, not restart, after crash)
+
+#### 3. Circuit Breakers for External Dependencies
+
+From Composio + Resilience4j research:
+- **Closed**: Normal operation, requests pass through
+- **Open**: After N consecutive failures, requests fail fast without attempting
+- **Half-Open**: After timeout, limited requests test whether service recovered
+
+**For OSIRIS:**
+- **LLM provider circuit breaker**: If API calls fail N consecutive times → stop trying for 60s → half-open with 1 test call
+- **GitHub API circuit breaker**: If PR creation fails N times → queue approvals → retry with backoff
+- **ntfy circuit breaker**: If notifications fail N times → log to file → batch retry
+
+#### 4. Graceful Degradation
+
+- **Kill switch fallback**: If kill switch file can't be read → default to SAFE (stop auto-fixing)
+- **Rate limit file unavailable**: If `rateLimitTracker` can't persist → use in-memory + alert
+- **Git unavailable**: If GitOpsRemediation can't push → queue locally → retry on next health check
+- **LLM unavailable**: If fix generation fails → escalate to human via ntfy with raw error dump
+
+### Current State on orkestr.eu
+
+**Already in place:**
+- ✅ systemd auto-restart (watchdog pattern for process crashes)
+- ✅ `/app/NO_AUTO_FIX` kill switch (graceful degradation to manual mode)
+- ✅ Ntfy health notifications (heartbeat pattern)
+- ✅ Persistent state in `/app/data/` directory
+
+**What can be improved:**
+1. **Add checkpointing** — Persist in-flight fix state so restarts resume, not restart
+2. **Add circuit breakers** — For LLM API, GitHub API, ntfy notifications
+3. **Add idempotency keys** — Prevent duplicate PR creation if agent retries after crash
+4. **Add graceful degradation** — Fallback behaviors when components fail
+5. **Add health check endpoints** — `/health` already returns status; could add `/health/detailed` for agent state
+6. **Add state snapshots** — Periodic snapshot of EmergencyStop + pendingApprovals + fixOutcomeIndex
+
+### Proposed Reliability Implementation
+
+**Phase A: State Persistence (non-breaking)**
+- Serialize `EmergencyStop` state to `/app/data/emergency-state.json` on every change
+- Serialize `pendingApprovals` to `/app/data/pending-approvals.json`
+- Serialize `fixOutcomeIndex` to `/app/data/fix-outcomes.json`
+- Deserialize on startup (with validation — reject corrupted state)
+
+**Phase B: Circuit Breakers**
+- Add `CircuitBreaker` class for LLM API (10s timeout, 5 consecutive failures → 60s cooldown)
+- Add `CircuitBreaker` class for GitHub API (10s timeout, 3 consecutive failures → 60s cooldown)
+- Add `CircuitBreaker` class for ntfy (5s timeout, 5 consecutive failures → fallback to file logging)
+
+**Phase C: Idempotency + Graceful Degradation**
+- Add unique operation IDs to all PR creation + fix attempts
+- Check for existing in-flight operations on startup
+- Fallback: if GitHub unavailable, queue to `/app/data/fix-queue.json` for later retry
+- Fallback: if ntfy unavailable, batch-write to `/app/data/notification-backlog.json`
+
+**Phase D: Health & Monitoring**
+- Add `/health` returns: status, uptime, errorCount, agent state (running/idle/approval-pending/emergency-stop), circuits (open/closed/half-open), rate limit counters
+
+---
+
 ## Design Requirements
 
 ### Safety Requirements (Anthropic + Microsoft + AWS + OWASP ASI)
