@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the design for enhancing OSIRIS's self-improvement system using enterprise-grade safety patterns from Anthropic, Microsoft, NIST AI RMF, ISO/IEC 42001, OWASP ASI, AWS Security, CSA RSI research, and real-world CI/CD self-healing implementations.
+This document outlines the design for enhancing OSIRIS's self-improvement system using enterprise-grade safety patterns from Anthropic, Microsoft, NIST AI RMF, ISO/IEC 42001, OWASP ASI, AWS Security, CSA RSI research, AI agent observability platforms (Confident AI, Agentuity, Vellum, PredictionGuard, Fiddler), and real-world CI/CD self-healing implementations.
 
 ## Current State
 
@@ -268,6 +268,58 @@ Claude proposes tool call → {User allow/deny rules?} → Match → Apply rule
 - IAM grants
 - Force push
 - `git reset --hard`
+
+### 7. Agent Observability & Behavioral Monitoring
+
+**Key insight**: Traditional APM (latency, error rates) doesn't capture agent-specific risks. AI agents require **execution tracing**, **behavioral drift detection**, and **specification gaming detection**.
+
+#### Agent-Specific Observability Dimensions
+
+**Execution-level telemetry:**
+- Tool selection accuracy, planning quality, step-level faithfulness, reasoning coherence
+- Task completion rate, token consumption per task (anomaly = hallucination/looping/injection)
+- Tool invocation success/failure rates per tool type
+
+**Behavioral drift detection:**
+- **Agent drift**: Gradual divergence from governance policy baseline (model updates, KB changes, context staleness)
+- **Output drift**: Semantic similarity scoring against validated baseline corpus
+- **Policy drift**: Time-series of governance policy adherence (unauthorized tools, data egress)
+
+**Production eval strategy:**
+- Production evals run on every live session against real user inputs
+- Automated judges for: semantic drift, factual consistency, policy compliance
+- Evaluations inspectable alongside agent execution timeline (OpenTelemetry traces)
+
+#### Agent-Specific Metrics (from Confident AI, Agentuity, Vellum, PredictionGuard, Fiddler)
+
+| Category | Metric | Description |
+|----------|--------|-------------|
+| **Task** | `task_completion_rate` | % of agent tasks that complete successfully |
+| | `average_steps_per_task` | Average reasoning steps (expected: 3-7 for OSIRIS fixes) |
+| | `token_consumption_anomaly` | Token budget exceeded (indicates looping/hallucination/injection) |
+| | `retry_count` | Average retries per tool call (loop detection signal) |
+| | `time_to_completion` | Wall-clock time from task start to completion |
+| **Drift** | `output_semantic_drift` | Rolling avg similarity to baseline corpus |
+| | `tool_usage_drift` | Changes in tool invocation patterns |
+| | `reasoning_length_drift` | Chain-of-thought length changes (overthinking = risk) |
+| | `confidence_score_drift` | Changes in agent's self-reported confidence |
+| **Security** | `policy_violation_rate` | % of actions violating governance policy |
+| | `unauthorized_tool_attempts` | Attempts to use tools outside allowlist |
+| | `data_egress_events` | Attempts to send data outside approved endpoints |
+| | `prompt_injection_signatures` | Detected injection patterns in inputs/outputs |
+| **Trace-level** | `trace_completion` | Full trace completed vs abandoned |
+| | `policy_adherence_per_trace` | Policy compliance recorded per execution trace |
+
+**Behavioral baseline for OSIRIS self-improvement:**
+- Normal token consumption per fix task: ~500-2000 tokens
+- Normal step count per fix: 3-7 steps (detect → sanitize → check → score → route → fix → validate)
+- Normal tool invocation pattern: file read → pattern match → PR creation
+- Normal fix size: ~25 lines avg (per Microsoft .NET team)
+
+**Anomaly triggers** (alert on deviation from baseline):
+- Token consumption > 3x baseline → hallucination or prompt injection
+- Step count > 10 → potential infinite loop or scope creep
+- Tool invocations outside normal pattern → unauthorized tool access
 
 ---
 
@@ -636,7 +688,88 @@ async function logWithTrace(operation, data, actor = 'system') {
 
 ---
 
-## Monitoring & Telemetry
+---
+
+## Observability & Behavioral Monitoring
+
+### AI Agent Observability Research
+
+**Key insight**: Traditional APM (latency, error rates) doesn't capture agent-specific risks. AI agents require **execution tracing**, **behavioral drift detection**, and **spec specification gaming detection**.
+
+#### Agent-Specific Observability Dimensions (from industry research)
+
+**Execution-level telemetry:**
+- Tool selection accuracy (which tools the agent chooses, when)
+- Planning quality (does the plan match the required fix scope?)
+- Step-level faithfulness (intermediate outputs match intent)
+- Reasoning coherence (chain-of-thought doesn't wander)
+- Task completion rate (end-to-end success)
+- Token consumption per task (anomaly = hallucination, looping, or injection)
+- Tool invocation success/failure rates per tool type
+
+**Behavioral drift detection:**
+- **Agent drift**: Gradual divergence of agent behavior from its defined governance policy baseline, caused by model updates, knowledge base changes, or context staleness — can occur even when individual responses complete without error
+- **Output drift**: Semantic similarity scoring against validated baseline corpus — rolling window below threshold indicates divergence
+- **Policy drift**: Time-series tracking of governance policy adherence (unauthorized tool calls, data egress, toxicity/factual consistency)
+
+**Production eval strategy:**
+- Production evals run on every live session against real user inputs and agent outputs
+- Catches behavioral issues that only surface under real traffic patterns, adversarial inputs, or edge cases not in test datasets
+- Evaluations are inspectable alongside the agent's execution timeline (OpenTelemetry traces)
+
+#### Agent-Specific Metrics (from Confident AI, Agentuity, Vellum, PredictionGuard)
+
+| Category | Metric | Description |
+|----------|--------|-------------|
+| **Task Metrics** | `task_completion_rate` | % of agent tasks that complete successfully |
+| | `average_steps_per_task` | Average reasoning steps before completion |
+| | `token_consumption_anomaly` | Token budget exceeded (indicates looping/hallucination/injection) |
+| | `retry_count` | Average retries per tool call (loop detection signal) |
+| | `time_to_completion` | Wall-clock time from task start to completion |
+| **Drift Detection** | `output_semantic_drift` | Rolling avg similarity to baseline corpus |
+| | `tool_usage_drift` | Changes in tool invocation patterns |
+| | `reasoning_length_drift` | Changes in chain-of-thought length (overthinking = risk) |
+| | `confidence_score_drift` | Changes in agent's self-reported confidence |
+| **Security Metrics** | `policy_violation_rate` | % of actions violating governance policy |
+| | `unauthorized_tool_attempts` | Attempts to use tools outside allowlist |
+| | `data_egress_events` | Attempts to send data outside approved endpoints |
+| | `prompt_injection_signatures` | Detected injection patterns in inputs/outputs |
+| | `toxicity_score` | Harmful content generation rate |
+| | `factual_consistency` | Factual accuracy of agent outputs |
+| **Cost & Resource** | `cost_per_task` | AI cost per completed task |
+| | `error_cost_ratio` | Cost wasted on failed/fixed tasks |
+| | `session_completion_rate` | Multi-session task success rate |
+| **Quality Signals** | `regressions_detected` | Performance degradations flagged by production evals |
+| | `user_feedback_correlation` | User feedback vs. automated eval scores |
+| | `eval_score_distribution` | Quality score spread across tasks |
+| | `human_intervention_triggers` | Escalations due to eval thresholds |
+| **Trace-level** | `trace_completion` | Full trace completed vs abandoned |
+| | `policy_adherence_per_trace` | Policy compliance recorded per execution trace |
+| | `frustrated_user_signal` | New topics/failed runs clustering |
+
+#### Behavioral Baseline Definition
+Establish baselines for:
+- Normal token consumption per fix task (expected ~500-2000 tokens)
+- Normal step count per fix (expected 3-7 steps: detect → sanitize → check → score → route → fix → validate)
+- Normal tool invocation pattern (file read → pattern match → PR creation)
+- Normal fix size distribution (expected ~25 lines avg, per Microsoft .NET team)
+
+**Anomaly triggers** (alert on deviation from baseline):
+- Token consumption > 3x baseline → hallucination or prompt injection
+- Step count > 10 → potential infinite loop or scope creep
+- Tool invocations outside normal pattern → unauthorized tool access
+- Fix size > 120 lines → scope creep (already enforced, but track for drift)
+
+#### Production Evaluations (Production Evals)
+Per Vellum and Agentuity research, production evals should run:
+- **On every live session** against real user inputs
+- **Automated judges** for: semantic drift, factual consistency, policy compliance
+- **Trace-to-dataset loops**: Production traces that surface anomalies become regression datasets
+- **Span-level evaluation**: Each step (span) in the agent's execution traced and evaluated, not just final output
+
+**Key principle**: "Agentic Observability extends beyond monitoring individual LLM calls to capture the complete autonomous decision-making lifecycle, inter-agent coordination, and goal-driven behavior." — Fiddler docs
+
+### Monitoring & Telemetry
 
 ### Metrics to Track
 1. `auto_fix_success_rate` — percentage of auto-fixes that pass validation
@@ -652,6 +785,34 @@ async function logWithTrace(operation, data, actor = 'system') {
 11. `post_validation_failures` — fixes rejected by validation layer
 12. `agent_restart_count` — number of times the self-healing agent restarts
 13. `scope_creep_incidents` — fixes that modified more files than expected
+
+### Agent-Specific Metrics (from Industry Research)
+14. `task_completion_rate` — % of fix tasks completed successfully end-to-end
+15. `average_steps_per_task` — avg reasoning steps (expected: 3-7)
+16. `token_consumption_anomaly` — token budget exceeded (indicates looping/injection)
+17. `output_semantic_drift` — rolling avg similarity to baseline corpus
+18. `tool_usage_drift` — changes in tool invocation patterns
+19. `reasoning_length_drift` — chain-of-thought length changes (overthinking risk)
+20. `policy_violation_rate` — % of actions violating governance policy
+21. `unauthorized_tool_attempts` — attempts to use tools outside allowlist
+22. `data_egress_events` — attempts to send data outside approved endpoints
+23. `eval_score_distribution` — quality score spread across fix tasks
+24. `trace_completion` — full execution trace completed vs abandoned
+25. `behavioral_baseline_drift` — deviation from normal token/step/tool patterns
+
+### Alerting Thresholds
+- **CRITICAL**: 3 consecutive denials → emergency stop + human escalation
+- **HIGH**: 5 trust boundary violations in 1h → investigation
+- **CRITICAL**: Any post-validation failure → immediate alert (adversarial behavior)
+- **HIGH**: Token consumption > 3x baseline → potential injection/looping
+- **HIGH**: Step count > 10 in single fix task → infinite loop suspicion
+- **WARNING**: Output semantic drift below 0.7 baseline for 24h → behavior review
+- **WARNING**: Tool usage drift detected → unauthorized pattern review
+- **DEFAULT**: Auto-fix success rate < 50% for 24h → confidence review + threshold adjustment
+- **LOW**: Daily rate limit exceeded → notification to owner
+- **INFO**: Confidence score below 0.5 → log for pattern analysis
+- **INFO**: Session denial limit approaching (15/20) → early warning
+- **INFO**: Average steps per task > 7 → efficiency review
 
 ### Alerting Thresholds
 - **CRITICAL**: 3 consecutive denials → emergency stop + human escalation
@@ -703,6 +864,16 @@ async function logWithTrace(operation, data, actor = 'system') {
 - [ ] Add agent ownership records
 - [ ] Update `DEVIATIONS.md` with any deviations
 - [ ] Create `.ai-heal-policy.yml` (inspired by enterprise CI patterns)
+
+### Phase 7: Observability & Behavioral Monitoring
+- [ ] Add token consumption tracking per fix task
+- [ ] Add step count tracking per fix task
+- [ ] Add behavioral baseline (expected: 3-7 steps, 500-2000 tokens)
+- [ ] Add anomaly detection: token >3x baseline, steps >10
+- [ ] Add output semantic drift detection (baseline corpus comparison)
+- [ ] Add tool usage drift monitoring
+- [ ] Add trace completion tracking
+- [ ] Add production eval hooks (per-session quality checks)
 
 ---
 
@@ -832,3 +1003,13 @@ async function logWithTrace(operation, data, actor = 'system') {
 - ✅ "Unchanged behavior" spec generation per fix
 - ✅ Scope creep detection in `validateFix()`
 - ✅ `.ai-heal-policy.yml` creation (enterprise CI pattern)
+- ✅ Behavioral baseline definition (3-7 steps, 500-2000 tokens per fix)
+- ✅ Anomaly detection for token/step count deviations
+- ✅ Output semantic drift monitoring
+- ✅ Tool usage drift monitoring
+- ✅ Trace completion tracking
+
+### 15. Behavioral Drift Unnoticed
+- **Risk**: Agent's behavior gradually shifts outside safety parameters (model updates, KB changes, context staleness)
+- **Severity**: High
+- **Mitigation**: Behavioral baseline + anomaly detection (token >3x, steps >10) + semantic drift monitoring + trace completion tracking
