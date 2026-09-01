@@ -15,9 +15,10 @@
  *    - Immutable audit trail
  *    - Kill switch / emergency stop
  *
- * This worker intentionally does NOT run the Telegram bot polling loop.
- * The Telegram bot uses webhooks via Vercel (`/api/telegram/webhook`) so it
- * does not need a separate 24/7 polling process.
+ * This worker DOES run the Telegram guard bot polling loop.
+ * The main trading bot uses webhooks via Vercel (`/api/telegram/webhook`) so it
+ * does not need a separate 24/7 polling process, but the guard bot polls every
+ * 5s to process /status, /stop, /health, etc. commands.
  *
  * NOTE: orkestr.eu deploy watchdog expects an HTTP listener to be running.
  * This worker starts a minimal HTTP server on the PORT env var (defaults to
@@ -483,6 +484,35 @@ async function initialize() {
   }
   
   console.log('[worker] Initialization complete');
+  
+  // Initialize self-healing system at startup (including Telegram polling)
+  if (SECURITY_BOT_TOKEN && SECURITY_BOT_CHAT_ID) {
+    try {
+      const selfHealing = require('./self-healing-system');
+      if (!selfHealing.initialized) {
+        await selfHealing.initialize({
+          repoRoot: process.cwd(),
+          telegramBotToken: SECURITY_BOT_TOKEN,
+          telegramChatId: SECURITY_BOT_CHAT_ID
+        });
+        console.log('[worker] Self-healing system initialized with Telegram polling');
+        
+        // Verify bot is responding
+        const telegramBot = require('./self-healing-system/lib/telegram-bot');
+        if (telegramBot.getClient()) {
+          const me = await telegramBot.getClient()._apiRequest('getMe');
+          if (me.ok) {
+            console.log(`[worker] Guard bot: @${me.result.username} (ID: ${me.result.id})`);
+            console.log(`[worker] Authorized Chat ID: ${SECURITY_BOT_CHAT_ID}`);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[worker] Self-healing system failed to initialize:', err.message);
+    }
+  } else {
+    console.warn('[worker] Telegram guard bot not configured (missing SECURITY_BOT_TOKEN/CHAT_ID)');
+  }
 }
 
 
