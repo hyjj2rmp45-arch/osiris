@@ -131,6 +131,16 @@ class FixCircuitBreaker {
     this.failureThreshold = opts.failureThreshold || CIRCUIT_BREAKER_FAILURE_THRESHOLD;
     this.patterns = {};
   }
+  
+  getStatus() {
+    return {
+      state: this.state,
+      failureCount: this.failureCount,
+      lastFailureTime: this.lastFailureTime,
+      patterns: this.patterns
+    };
+  }
+  
   onSuccess(p = 'default') {
     this.failureCount = 0;
     this.state = 'CLOSED';
