@@ -547,6 +547,33 @@ async function initialize() {
 
 
 
+// Blast radius status helper
+function getBlastRadiusStatus() {
+  const now = Date.now();
+  // Count fixes in the last hour
+  const recentFixes = BLAST_RADIUS.lastFixTimestamps.filter(t => (now - t) < 60 * 60 * 1000);
+  const patternsHit = Object.keys(BLAST_RADIUS.patternFixTimestamps).filter(p => {
+    const timestamps = BLAST_RADIUS.patternFixTimestamps[p];
+    return timestamps.some(t => (now - t) < 60 * 60 * 1000);
+  });
+  
+  // Count total recent fixes across all patterns
+  let totalRecent = 0;
+  for (const p of Object.keys(BLAST_RADIUS.patternFixTimestamps)) {
+    const timestamps = BLAST_RADIUS.patternFixTimestamps[p];
+    totalRecent += timestamps.filter(t => (now - t) < 60 * 60 * 1000).length;
+  }
+  
+  return {
+    maxFixesPerHour: BLAST_RADIUS.maxFixesPerHour,
+    maxFixesPerPattern: BLAST_RADIUS.maxFixesPerPattern,
+    recentFixes: totalRecent,
+    activePatterns: patternsHit.length,
+    withinLimits: totalRecent < BLAST_RADIUS.maxFixesPerHour,
+    cooldownActive: BLAST_RADIUS.cooldownBetweenFixesMs > 0
+  };
+}
+
 // DistributedTracer moved before HTTP server
 
 // ── Sidecar Healing Process ─────────────────────────────────────────────────
