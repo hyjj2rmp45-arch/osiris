@@ -410,6 +410,49 @@ From Composio + Resilience4j research:
 
 ---
 
+## AI-Generated Code Security Research
+
+### Common Vulnerabilities in AI-Generated Fixes
+
+**Key finding from Opsera DevSecOps research (2026):** "AI-generated remediation suggestions should be reviewed before applying — they point in the right direction, but are not merge-ready patches."
+
+#### 6 Most Common Vulnerability Classes (SonarSource)
+| # | Vulnerability | Description | OSIRIS Detection |
+|---|--------------|-------------|-----------------|
+| 1 | **Injection flaws** | String concatenation in SQL queries, shell commands, HTML output | `DANGEROUS_PATTERNS` blocks `exec()`, `eval()` |
+| 2 | **Hardcoded secrets** | API keys, passwords, tokens embedded in code | `sanitizeErrorContent` + trust boundary prevents new secrets |
+| 3 | **Insecure crypto** | Hardcoded IVs, weak hash algorithms (MD5, SHA1), no salt | `DANGEROUS_PATTERNS` blocks crypto misuse |
+| 4 | **Security misconfiguration** | Debug mode in production, verbose errors, default credentials | Post-fix validation rejects `--debug`, `console.log` in prod |
+| 5 | **Broken access control** | Missing auth checks, IDOR, privilege escalation functions | Trust boundary prevents path traversal |
+| 6 | **Outdated/vulnerable dependencies** | Old library versions, known CVE patterns | Hard denylist on package.json/lockfile changes |
+
+#### Hallucinated Dependencies (Endor Labs)
+- **Slopsquatting**: AI suggests installing packages that don't exist → attacker registers them → supply chain attack
+- **Mitigation for OSIRIS**: `package.json` in hard denylist — agent CANNOT add dependencies
+- **Rate**: 15% of AI-generated code includes at least one hallucinated dependency (industry average)
+
+#### Monoculture Vulnerabilities (APIRO)
+- **Risk**: As AI tools converge on similar outputs, flawed patterns become widespread
+- **Mitigation for OSIRIS**: Each fix is validated independently; no copy-paste from other sources
+- **Detection**: `postFixValidation()` scans for known insecure patterns regardless of source
+
+#### 40% Vulnerable Rate (APIRO)
+- **Finding**: 40% of AI-generated code contains vulnerabilities
+- **Context**: This is functional code, not security-critical infrastructure
+- **OSIRIS mitigation**: 
+  - Fixes are small (avg 25 lines) → lower vulnerability surface
+  - Targeted at specific known patterns → not greenfield generation
+  - Multi-layer validation catches injection, secrets, dangerous patterns
+  - All fixes go through PR review (human-in-loop for QUEUE/ESCALATE routes)
+
+#### Specific to CI/CD Self-Healing (DevX)
+- **Pipeline credential risk**: CI pipelines have powerful credentials → compromised pipeline = compromised everything
+- **SLSA framework**: Supply-chain integrity for AI-driven automation
+- **Key recommendation**: "AI-generated remediation suggestions should be reviewed before applying"
+- **For OSIRIS**: Our confidence threshold (85%) + post-fix validation + PR-based workflow aligns with this recommendation. Only high-confidence fixes auto-apply; everything else → PR review.
+
+---
+
 ## Design Requirements
 
 ### Safety Requirements (Anthropic + Microsoft + AWS + OWASP ASI)
