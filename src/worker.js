@@ -55,9 +55,33 @@ const { ErrorImpactScorer } = require('./error-impact');
 const { SelfHealingEngine } = require('./self-healing');
 const { PostmortemGenerator } = require('./postmortem');
 
-const TREASURY_ADDRESS = process.env.PHANTOM_SOL_ADDRESS || '3FfRM3fzySeMmKsWNND4vgajS6eKzWtnb5qDbFfbhxUk';
-const NTFY_TOPIC = process.env.NTFY_TOPIC || 'OSIRIS';
-const NTFY_ERROR_TOPIC = process.env.NTFY_ERROR_TOPIC || 'osiris-errors-raw';
+// Load Telegram guard bot credentials (fallback to file if env vars not set)
+let SECURITY_BOT_TOKEN = process.env.SECURITY_BOT_TOKEN;
+let SECURITY_BOT_CHAT_ID = process.env.SECURITY_BOT_CHAT_ID;
+
+if (!SECURITY_BOT_TOKEN) {
+  // Try loading from bot-token.env file
+  const botTokenFile = path.join(__dirname, '..', 'src', 'bot-token.env');
+  if (fs.existsSync(botTokenFile)) {
+    const fileContent = fs.readFileSync(botTokenFile, 'utf8');
+    const vars = {};
+    fileContent.split('\n').forEach(line => {
+      const match = line.match(/^([A-Z_]+)=(.*)$/);
+      if (match) { vars[match[1]] = match[2].trim(); }
+    });
+    if (vars.BOT_TOKEN && !SECURITY_BOT_TOKEN) {
+      // Map BOT_TOKEN to SECURITY_BOT_TOKEN for the guard bot
+      SECURITY_BOT_TOKEN = vars.BOT_TOKEN;
+    }
+    if (vars.ALLOWED_CHAT_IDS && !SECURITY_BOT_CHAT_ID) {
+      // Use first allowed chat ID
+      SECURITY_BOT_CHAT_ID = vars.ALLOWED_CHAT_IDS.split(',')[0];
+    }
+  }
+}
+if (!SECURITY_BOT_CHAT_ID && process.env.ALLOWED_CHAT_IDS) {
+  SECURITY_BOT_CHAT_ID = process.env.ALLOWED_CHAT_IDS.split(',')[0];
+}
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS || 30000);
 const HTTP_PORT = Number(process.env.PORT || process.env.WORKER_HTTP_PORT || 3000);
 const SELF_HEALTH_CHECK_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
@@ -69,6 +93,9 @@ const KNOWN_FIXES_HMAC_FILE = path.join(__dirname, '..', 'known-fixes.json.hmac'
 const HMAC_SECRET = process.env.KNOWN_FIXES_HMAC_SECRET || '';
 const FIXES_LOG = path.join(__dirname, '..', 'fixes.log');
 const STARTUP_LOCK_FILE = path.join(__dirname, '..', '.data', 'startup-lock.json');
+const NTFY_TOPIC = process.env.NTFY_TOPIC || 'OSIRIS';
+const NTFY_ERROR_TOPIC = process.env.NTFY_ERROR_TOPIC || 'osiris-errors-raw';
+const TREASURY_ADDRESS = process.env.PHANTOM_SOL_ADDRESS || '3FfRM3fzySeMmKsWNND4vgajS6eKzWtnb5qDbFfbhxUk';
 const MAX_CRITICAL_FIXES_PER_HOUR = 5;
 const FIX_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
 const CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3;
@@ -1461,8 +1488,8 @@ async function recordError(errorData) {
         if (!selfHealing.initialized) {
           await selfHealing.initialize({
             repoRoot: process.cwd(),
-            telegramBotToken: process.env.SECURITY_BOT_TOKEN || process.env.BOT_TOKEN,
-            telegramChatId: process.env.SECURITY_BOT_CHAT_ID || process.env.TELEGRAM_CHAT_ID
+            telegramBotToken: SECURITY_BOT_TOKEN || process.env.BOT_TOKEN,
+            telegramChatId: SECURITY_BOT_CHAT_ID || process.env.TELEGRAM_CHAT_ID
           });
         }
       } catch (err) {

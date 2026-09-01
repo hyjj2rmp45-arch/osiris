@@ -106,6 +106,80 @@ class TelegramClient {
   }
   
   /**
+   * Start long-polling for updates (for receiving commands).
+   * Call this once after initialize() to enable command processing.
+   */
+  startPolling(pollIntervalMs = 5000) {
+    if (this._pollTimer) {
+      clearInterval(this._pollTimer);
+    }
+    this._pollTimer = setInterval(async () => {
+      try {
+        await this._pollOnce();
+      } catch (err) {
+        console.error('[Telegram] Polling error:', err.message);
+      }
+    }, pollIntervalMs);
+    console.log('[Telegram] Polling started for command processing');
+  }
+  
+  /**
+   * Stop the polling loop.
+   */
+  stopPolling() {
+    if (this._pollTimer) {
+      clearInterval(this._pollTimer);
+      this._pollTimer = null;
+      console.log('[Telegram] Polling stopped');
+    }
+  }
+  
+  /**
+   * Poll once for new updates and process them.
+   */
+  async _pollOnce() {
+    if (!this.botToken) return;
+    
+    const result = await this.getUpdates(100, 1); // Long polling with 1s timeout
+    
+    if (!result.ok || !result.result || result.result.length === 0) {
+      return;
+    }
+    
+    for (const update of result.result) {
+      await this._processUpdate(update);
+    }
+  }
+  
+  /**
+   * Process a single Telegram update (command or message).
+   */
+  async _processUpdate(update) {
+    if (!update.message || !update.message.text) return;
+    
+    const message = update.message;
+    const chatId = message.chat?.id;
+    const text = message.text;
+    
+    // Security check: only authorized chat IDs can send commands
+    if (!isAuthorized(chatId)) {
+      console.warn(`[Telegram] Unauthorized command from chat ${chatId}`);
+      // Still reply so they know the bot exists but they're not authorized
+      // Actually, don't reveal the bot exists to unauthorized users
+      return;
+    }
+    
+    // Parse command: /command arg1 arg2
+    const match = text.match(/^\/(\w+)\s*(.*)/);
+    if (!match) return;
+    
+    const command = '/' + match[1];
+    const args = match[2] ? match[2].trim().split(/\s+/) : [];
+    
+    await this.processCommand(command, args, message);
+  }
+  
+  /**
    * Get updates via long polling (for local dev/testing).
    */
   async getUpdates(limit = 100, timeout = 0) {

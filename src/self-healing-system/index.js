@@ -124,6 +124,12 @@ async function initialize(options = {}) {
   if (options.telegramBotToken && options.telegramChatId) {
     telegramBot.initialize(options.telegramBotToken, options.telegramChatId);
     auditTrail.record('init_telegram_bot', { status: 'initialized' });
+    
+    // Start polling for commands (5s interval)
+    if (telegramBot.getClient()) {
+      telegramBot.getClient().startPolling(5000);
+      auditTrail.record('telegram_polling_started', { intervalMs: 5000 });
+    }
   }
   
   // Validate configuration integrity
