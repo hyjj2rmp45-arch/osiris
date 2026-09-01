@@ -280,40 +280,42 @@ class ModeManager {
     const modeObj = MODES[newMode];
     if (!modeObj) return;
     
-    // Send appropriate notification
-    if (this.telegramBot && this.telegramBot.getClient()) {
-      let message = '';
-      
-      switch (newMode) {
-        case 'SCHOOL':
-          message = `🎒 Now in UNATTENDED mode\nPayment fixes BLOCKED until 3:15 PM\nAll fixes require manual approval`;
-          break;
-        case 'NIGHT':
-          message = `🌙 Night mode activated\nAuto-fix paused - critical alerts only`;
-          break;
-        case 'RECAP':
-          message = `📋 Morning recap buffer\nReview overnight activity before school mode`;
-          break;
-        case 'ACTIVE':
-          if (oldMode === 'SCHOOL') {
-            message = `🏫 School mode ended\nReturning to ACTIVE mode`;
-          } else if (oldMode === 'NIGHT') {
-            message = `☀️ Night mode ended\nAuto-fix resumed`;
+    // Send notification via ntfy.sh
+    const notifyMessages = {
+      SCHOOL: '🎒 UNATTENDED mode: Payment fixes BLOCKED until 3:15 PM',
+      NIGHT: '🌙 Night mode activated - Auto-fix paused, critical alerts only',
+      RECAP: '📋 Morning recap - Review overnight activity',
+      ACTIVE: oldMode === 'SCHOOL' ? '🏫 School mode ended - Active mode resumed' :
+               oldMode === 'NIGHT' ? '☀️ Night mode ended - Auto-fix resumed' : '',
+      WEEKEND: '📆 Weekend mode - Manual approval only',
+      HOLIDAY: '🎉 Holiday mode - Manual approval only',
+      EMERGENCY: '🚨 Emergency mode - All auto-fix disabled'
+    };
+    
+    const message = notifyMessages[newMode];
+    if (message) {
+      try {
+        const https = require('https');
+        const options = {
+          hostname: 'ntfy.sh',
+          port: 443,
+          path: '/OSIRIS',
+          method: 'POST',
+          headers: {
+            'Title': 'OSIRIS Guard | ' + MODES[newMode].name,
+            'Priority': 'default'
           }
-          break;
-        case 'WEEKEND':
-          message = `📆 Weekend mode activated\nAuto-fix disabled - manual approval only`;
-          break;
-      }
-      
-      if (message) {
-        this.telegramBot.notify(message).catch(err => {
-          console.error('[ModeManager] Failed to send transition notification:', err.message);
-        });
+        };
+        const req = https.request(options, (res) => { res.resume(); });
+        req.on('error', (e) => console.error('[ModeManager] notify failed:', e.message));
+        req.write(message);
+        req.end();
+      } catch (err) {
+        console.error('[ModeManager] Failed to send notification:', err.message);
       }
     }
   }
-  
+
   /**
    * Set manual override mode.
    */
