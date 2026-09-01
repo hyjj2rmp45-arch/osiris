@@ -68,6 +68,7 @@ const KNOWN_FIXES_FILE = path.join(__dirname, '..', 'known-fixes.json');
 const KNOWN_FIXES_HMAC_FILE = path.join(__dirname, '..', 'known-fixes.json.hmac');
 const HMAC_SECRET = process.env.KNOWN_FIXES_HMAC_SECRET || '';
 const FIXES_LOG = path.join(__dirname, '..', 'fixes.log');
+const STARTUP_LOCK_FILE = path.join(__dirname, '..', '.data', 'startup-lock.json');
 const MAX_CRITICAL_FIXES_PER_HOUR = 5;
 const FIX_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
 const CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3;
@@ -1974,6 +1975,9 @@ async function sendNtfy(title, message, priority = 'default') {
 
 // ── Error topic consumption ──────────────────────────
 
+// Track processed ntfy message IDs to prevent duplicate notifications
+const processedNtfyMessages = new Set();
+
 async function consumeErrorTopic() {
   try {
     const response = await fetch(`https://ntfy.sh/${NTFY_ERROR_TOPIC}/json?since=now&timeout=10000`, {
@@ -1982,7 +1986,15 @@ async function consumeErrorTopic() {
     });
     if (!response.ok) return;
     const data = await response.json();
-    if (data && data.message) {
+    if (data && data.message && data.id) {
+      // Deduplicate: skip if we've already processed this message
+      if (processedNtfyMessages.has(data.id)) return;
+      processedNtfyMessages.add(data.id);
+      // Prune old IDs to prevent unbounded growth (keep last 200)
+      if (processedNtfyMessages.size > 200) {
+        const iterator = processedNtfyMessages.values();
+        for (let i = 0; i < 100; i++) { processedNtfyMessages.delete(iterator.next().value); }
+      }
       await recordError({
         severity: 3,
         source: 'ntfy-error-topic',
@@ -1991,7 +2003,7 @@ async function consumeErrorTopic() {
       });
     }
   } catch {
-    // Silent
+    // Silent — error topic is best-effort
   }
 }
 
@@ -2081,7 +2093,30 @@ async function main() {
   if (!NTFY_TOPIC) console.warn('[worker] NTFY_TOPIC not set');
 
   await initialize();
-  await sendNtfy('OSIRIS Worker', 'Monitor worker started with auto-approval + security', 'high');
+  
+  // Prevent duplicate startup notifications — check if we notified recently
+  const STARTUP_NOTIFY_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+  let skipStartupNotify = false;
+  try {
+    if (fs.existsSync(STARTUP_LOCK_FILE)) {
+      const lockData = JSON.parse(fs.readFileSync(STARTUP_LOCK_FILE, 'utf-8'));
+      if (Date.now() - lockData.timestamp < STARTUP_NOTIFY_COOLDOWN_MS) {
+        skipStartupNotify = true;
+        console.log('[worker] Skipping startup notification (recently notified)');
+      }
+    }
+  } catch {}
+  
+  if (!skipStartupNotify) {
+    await sendNtfy('OSIRIS Worker', 'Monitor worker started with auto-approval + security', 'high');
+    // Write lock file to prevent duplicates from rapid restarts
+    try {
+      fs.writeFileSync(STARTUP_LOCK_FILE, JSON.stringify({
+        timestamp: Date.now(),
+        pid: process.pid
+      }));
+    } catch (e) { /* ignore */ }
+  }
 
   const interval = setInterval(async () => {
     try {
