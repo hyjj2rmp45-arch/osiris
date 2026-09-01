@@ -517,20 +517,20 @@ async function initialize() {
   }
   
   console.log('[worker] Initialization complete');
-  
-  // Initialize self-healing system at startup (including Telegram polling)
-  if (SECURITY_BOT_TOKEN && SECURITY_BOT_CHAT_ID) {
-    try {
-      const selfHealing = require('./self-healing-system');
-      if (!selfHealing.initialized) {
-        await selfHealing.initialize({
-          repoRoot: process.cwd(),
-          telegramBotToken: SECURITY_BOT_TOKEN,
-          telegramChatId: SECURITY_BOT_CHAT_ID
-        });
-        console.log('[worker] Self-healing system initialized with Telegram polling');
-        
-        // Verify bot is responding
+
+  // Initialize self-healing system at startup (including mode manager)
+  try {
+    const selfHealing = require('./self-healing-system');
+    if (!selfHealing.initialized) {
+      await selfHealing.initialize({
+        repoRoot: process.cwd(),
+        telegramBotToken: SECURITY_BOT_TOKEN || null,
+        telegramChatId: SECURITY_BOT_CHAT_ID || null
+      });
+      console.log('[worker] Self-healing system initialized');
+    
+      // Verify bot is responding if configured
+      if (SECURITY_BOT_TOKEN && SECURITY_BOT_CHAT_ID) {
         const telegramBot = require('./self-healing-system/lib/telegram-bot');
         if (telegramBot.getClient()) {
           const me = await telegramBot.getClient()._apiRequest('getMe');
@@ -540,16 +540,36 @@ async function initialize() {
           }
         }
       }
-    } catch (err) {
-      console.error('[worker] Self-healing system failed to initialize:', err.message);
     }
-  } else {
-    console.warn('[worker] Telegram guard bot not configured (missing SECURITY_BOT_TOKEN/CHAT_ID)');
+  } catch (err) {
+    console.error('[worker] Self-healing system init error (will continue with built-in safety only):', err.message);
+  }
+
+  // Create mode manager fallback if self-healing init failed
+  try {
+    const modeManager = global.__modeManager;
+    if (!modeManager) {
+      // Force mode manager initialization even if self-healing init failed
+      const SelfHealing = require('./self-healing-system');
+      if (SelfHealing && SelfHealing.initialized !== true) {
+        // Initialize with minimal options
+        await SelfHealing.initialize({
+          repoRoot: process.cwd(),
+          telegramBotToken: null,
+          telegramChatId: null
+        });
+      }
+      if (global.__modeManager) {
+        console.log('[worker] Mode manager initialized after fallback');
+      }
+    }
+  } catch (e) {
+    console.error('[worker] Mode manager fallback error:', e.message);
   }
 }
 
 
-
+// Blast radius status helper
 // Blast radius status helper
 function getBlastRadiusStatus() {
   const now = Date.now();
@@ -2264,7 +2284,17 @@ async function main() {
       await processQueueBacklog();
     pruneStaleFixOutcomes();
     await updateKnownFixConfidence();
-      await sidecar.runCheck();
+    
+    // Check mode transitions (sends ntfy notifications on change)
+    if (global.__modeManager) {
+      try {
+        global.__modeManager.getCurrentMode();
+      } catch (e) {
+        console.error('[worker] Mode check error:', e.message);
+      }
+    }
+    
+    await sidecar.runCheck();
       
       const selfHealthy = await checkSelfHealth();
       if (!selfHealthy) {
