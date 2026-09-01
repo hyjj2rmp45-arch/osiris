@@ -77,5 +77,4 @@ docker-compose.yml
 
 .vercel
 .env*
-src/bot-token.env
 .data/
