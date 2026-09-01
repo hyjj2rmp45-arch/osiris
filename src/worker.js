@@ -1501,6 +1501,20 @@ async function recordError(errorData) {
           return;
         }
 
+        // School mode: Only critical fixes (SEV4+) allowed, rest queued
+        if (currentMode === 'SCHOOL' && severity < 4) {
+          await sendNtfy(
+            `⏸️ Non-critical fix queued - School mode`,
+            `Fix: ${matchingFix.description}\nSeverity: ${severity} (< 4)\nQueued until after school hours (after 3:15 PM)`,
+            'default'
+          );
+          await appendAuditLog('fix_queued_school_mode', {
+            pattern: matchingFix.pattern,
+            severity: severity
+          });
+          return;
+        }
+
         // Phase 3: Record metrics
         selfHealing.recordFixMetrics(error, matchingFix, safetyResult);
 
